@@ -15,6 +15,8 @@ SERVICE_NAME="${SERVICE_NAME:-moomoo-backend}"
 OPEND_HOST="${MOOMOO_OPEND_HOST:-127.0.0.1}"
 OPEND_PORT="${MOOMOO_OPEND_PORT:-11111}"
 INSTALL_OPEND="${INSTALL_OPEND:-0}"
+INSTALL_RUNTIME_DATA_PUSH_TIMER="${INSTALL_RUNTIME_DATA_PUSH_TIMER:-1}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
 if [[ -z "${REPO_URL}" ]]; then
   echo "Missing REPO_URL. Example:"
@@ -49,6 +51,11 @@ if [[ -d "${APP_DIR}/.git" ]]; then
 else
   rm -rf "${APP_DIR}"
   git clone "${REPO_URL}" "${APP_DIR}"
+fi
+
+if [[ -n "${GITHUB_TOKEN}" ]]; then
+  TOKEN_REMOTE_URL="${REPO_URL/https:\/\//https://${GITHUB_TOKEN}@}"
+  git -C "${APP_DIR}" remote set-url origin "${TOKEN_REMOTE_URL}"
 fi
 
 if [[ ! -f "${DATA_DIR}/asset_snapshots.json" && -f "${APP_DIR}/data/asset_snapshots.json" ]]; then
@@ -92,6 +99,10 @@ systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 systemctl restart "${SERVICE_NAME}"
 
+if [[ "${INSTALL_RUNTIME_DATA_PUSH_TIMER}" == "1" || "${INSTALL_RUNTIME_DATA_PUSH_TIMER}" == "true" ]]; then
+  bash "${APP_DIR}/deploy/install_runtime_data_push_timer.sh"
+fi
+
 echo
 echo "Backend deploy finished."
 echo "Service: ${SERVICE_NAME}"
@@ -104,6 +115,9 @@ echo "  systemctl status ${SERVICE_NAME} --no-pager"
 echo
 echo "View logs:"
 echo "  journalctl -u ${SERVICE_NAME} -f"
+echo
+echo "Runtime data GitHub push timer:"
+echo "  systemctl list-timers portsight-runtime-data-push.timer --no-pager"
 echo
 if [[ "${INSTALL_OPEND}" == "1" || "${INSTALL_OPEND}" == "true" ]]; then
   echo "INSTALL_OPEND=${INSTALL_OPEND}; starting OpenD install and first login."

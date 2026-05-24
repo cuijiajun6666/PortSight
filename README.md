@@ -30,14 +30,60 @@ Run the bootstrap command:
 REPO_URL=https://github.com/cuijiajun6666/PortSight-Backend.git BACKEND_PUBLIC_URL=http://YOUR_SERVER_IP:8000 bash -c "$(curl -fsSL https://raw.githubusercontent.com/cuijiajun6666/PortSight-Backend/main/deploy/bootstrap_ubuntu.sh)"
 ```
 
+If this server should push runtime JSON data back to GitHub, pass a fine-grained token with `Contents: Read and write` permission for this repo:
+
+```bash
+REPO_URL=https://github.com/cuijiajun6666/PortSight-Backend.git BACKEND_PUBLIC_URL=http://YOUR_SERVER_IP:8000 GITHUB_TOKEN=YOUR_GITHUB_TOKEN bash -c "$(curl -fsSL https://raw.githubusercontent.com/cuijiajun6666/PortSight-Backend/main/deploy/bootstrap_ubuntu.sh)"
+```
+
+Replace these two parts before running it:
+
+```text
+YOUR_SERVER_IP      -> the current server IP, for example 45.63.31.248
+YOUR_GITHUB_TOKEN   -> your GitHub token, usually starts with github_pat_
+```
+
+Example shape:
+
+```bash
+REPO_URL=https://github.com/cuijiajun6666/PortSight-Backend.git BACKEND_PUBLIC_URL=http://45.63.31.248:8000 GITHUB_TOKEN=github_pat_REPLACE_WITH_YOURS bash -c "$(curl -fsSL https://raw.githubusercontent.com/cuijiajun6666/PortSight-Backend/main/deploy/bootstrap_ubuntu.sh)"
+```
+
+Do not commit the real token into this repo. Only paste it into the SSH terminal command on the server.
+
+After bootstrap, confirm the server remote uses the token:
+
+```bash
+cd /opt/moomoo-backend/app
+git remote -v
+```
+
+It should look like this. Do not share the full output if it contains the real token:
+
+```text
+https://github_pat_***@github.com/cuijiajun6666/PortSight-Backend.git
+```
+
 If you omit `BACKEND_PUBLIC_URL`, the deploy script will try to detect the server public IP automatically.
 
 The script installs system dependencies, clones this repo to `/opt/moomoo-backend/app`, creates `/opt/moomoo-backend/data`, installs Python packages, creates a systemd service, opens port `8000`, and starts the backend.
+
+It also installs the daily runtime JSON push timer by default. To skip that timer:
+
+```bash
+REPO_URL=https://github.com/cuijiajun6666/PortSight-Backend.git BACKEND_PUBLIC_URL=http://YOUR_SERVER_IP:8000 INSTALL_RUNTIME_DATA_PUSH_TIMER=0 bash -c "$(curl -fsSL https://raw.githubusercontent.com/cuijiajun6666/PortSight-Backend/main/deploy/bootstrap_ubuntu.sh)"
+```
 
 To deploy the backend and then immediately install/start OpenD for first login, add `INSTALL_OPEND=1`:
 
 ```bash
 REPO_URL=https://github.com/cuijiajun6666/PortSight-Backend.git BACKEND_PUBLIC_URL=http://YOUR_SERVER_IP:8000 INSTALL_OPEND=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/cuijiajun6666/PortSight-Backend/main/deploy/bootstrap_ubuntu.sh)"
+```
+
+Combined one-line deploy with OpenD and GitHub runtime data push enabled:
+
+```bash
+REPO_URL=https://github.com/cuijiajun6666/PortSight-Backend.git BACKEND_PUBLIC_URL=http://YOUR_SERVER_IP:8000 INSTALL_OPEND=1 GITHUB_TOKEN=YOUR_GITHUB_TOKEN bash -c "$(curl -fsSL https://raw.githubusercontent.com/cuijiajun6666/PortSight-Backend/main/deploy/bootstrap_ubuntu.sh)"
 ```
 
 ## Install OpenD On Ubuntu
