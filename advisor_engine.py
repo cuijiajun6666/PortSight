@@ -12,12 +12,16 @@ from advisor_kline_cache import (
     sync_daily_klines,
 )
 from advisor_profile import (
+    get_company_profiles,
     get_earnings_moves,
     get_financials,
+    get_operational_efficiency,
     get_owner_plates,
     get_valuations,
+    sync_company_profiles,
     sync_earnings_moves,
     sync_financials,
+    sync_operational_efficiency,
     sync_owner_plates,
     sync_valuations,
 )
@@ -401,6 +405,83 @@ def earnings_risk_adjustment(earnings):
     return adjustment, reasons
 
 
+def company_profile_summary(company_profile):
+    if not company_profile:
+        return {}
+    return {
+        "company_name": company_profile.get("company_name"),
+        "listed_date": company_profile.get("listed_date"),
+        "founded_date": company_profile.get("founded_date"),
+        "market": company_profile.get("market"),
+        "employee_num": company_profile.get("employee_num"),
+        "website": company_profile.get("website"),
+        "business": company_profile.get("business"),
+        "description": company_profile.get("description"),
+    }
+
+
+def operational_efficiency_summary(operational_efficiency):
+    if not operational_efficiency:
+        return {}
+    latest = operational_efficiency.get("latest", {}) or {}
+    return {
+        "currency_code": operational_efficiency.get("currency_code"),
+        "period_text": latest.get("period_text"),
+        "end_date_str": latest.get("end_date_str"),
+        "employee_num": safe_float(latest.get("employee_num"), None),
+        "employee_num_yoy": safe_float(latest.get("employee_num_yoy"), None),
+        "income_per_capita": safe_float(latest.get("income_per_capita"), None),
+        "income_per_capita_yoy": safe_float(latest.get("income_per_capita_yoy"), None),
+        "profit_per_capita": safe_float(latest.get("profit_per_capita"), None),
+        "profit_per_capita_yoy": safe_float(latest.get("profit_per_capita_yoy"), None),
+        "net_profit_per_capita": safe_float(latest.get("net_profit_per_capita"), None),
+        "net_profit_per_capita_yoy": safe_float(latest.get("net_profit_per_capita_yoy"), None),
+    }
+
+
+def operational_efficiency_risk_adjustment(operational_efficiency):
+    summary = operational_efficiency_summary(operational_efficiency)
+    if not summary:
+        return 0, []
+
+    adjustment = 0
+    reasons = []
+    income_yoy = summary.get("income_per_capita_yoy")
+    profit_yoy = summary.get("profit_per_capita_yoy")
+    net_profit_yoy = summary.get("net_profit_per_capita_yoy")
+    employee_yoy = summary.get("employee_num_yoy")
+
+    if income_yoy is not None:
+        if income_yoy > 10:
+            adjustment -= 3
+            reasons.append("人均营收同比改善，经营效率增强")
+        elif income_yoy < -10:
+            adjustment += 4
+            reasons.append("人均营收同比下滑，经营效率走弱")
+
+    if profit_yoy is not None:
+        if profit_yoy > 15:
+            adjustment -= 4
+            reasons.append("人均营业利润同比改善")
+        elif profit_yoy < -15:
+            adjustment += 5
+            reasons.append("人均营业利润同比下滑明显")
+
+    if net_profit_yoy is not None:
+        if net_profit_yoy > 15:
+            adjustment -= 4
+            reasons.append("人均净利润同比改善")
+        elif net_profit_yoy < -15:
+            adjustment += 5
+            reasons.append("人均净利润同比下滑明显")
+
+    if employee_yoy is not None and employee_yoy > 15 and income_yoy is not None and income_yoy < 0:
+        adjustment += 4
+        reasons.append("员工扩张较快但人均营收下降，扩张质量需观察")
+
+    return adjustment, reasons
+
+
 def score_position(
     position,
     daily_frame,
@@ -411,6 +492,8 @@ def score_position(
     valuation=None,
     financials=None,
     earnings=None,
+    company_profile=None,
+    operational_efficiency=None,
 ):
     code = position.get("code", "")
     plates = plates or []
@@ -482,6 +565,7 @@ def score_position(
     valuation_addon, valuation_reasons = valuation_risk_adjustment(valuation)
     financial_addon, financial_reasons = financial_risk_adjustment(financials)
     earnings_addon, earnings_reasons = earnings_risk_adjustment(earnings)
+    efficiency_addon, efficiency_reasons = operational_efficiency_risk_adjustment(operational_efficiency)
     risk_score = (
         volatility_risk * weights["volatility"]
         + drawdown_risk * weights["drawdown"]
@@ -492,6 +576,7 @@ def score_position(
         + valuation_addon
         + financial_addon
         + earnings_addon
+        + efficiency_addon
         + max(0, 50 - trend_score) * weights["trend"]
     )
     risk_score = round(max(0, min(100, risk_score)), 1)
@@ -534,6 +619,7 @@ def score_position(
     reasons.extend(valuation_reasons)
     reasons.extend(financial_reasons)
     reasons.extend(earnings_reasons)
+    reasons.extend(efficiency_reasons)
 
     return {
         "code": code,
@@ -548,6 +634,8 @@ def score_position(
             "valuation": valuation,
             "financials": financial_summary(financials),
             "earnings": earnings_summary(earnings),
+            "company_profile": company_profile_summary(company_profile),
+            "operational_efficiency": operational_efficiency_summary(operational_efficiency),
         },
         "weight": round(weight, 4),
         "market_val": market_val,
@@ -654,23 +742,31 @@ def sync_advisor_profiles(force=False):
     valuation_result = sync_valuations(codes, force=force)
     financial_result = sync_financials(codes, force=force)
     earnings_result = sync_earnings_moves(codes, force=force)
+    company_profile_result = sync_company_profiles(codes, force=force)
+    operational_efficiency_result = sync_operational_efficiency(codes, force=force)
     return {
         "ok": (
             plate_result.get("ok")
             and valuation_result.get("ok")
             and financial_result.get("ok")
             and earnings_result.get("ok")
+            and company_profile_result.get("ok")
+            and operational_efficiency_result.get("ok")
         ),
         "count": (
             plate_result.get("count", 0)
             + valuation_result.get("count", 0)
             + financial_result.get("count", 0)
             + earnings_result.get("count", 0)
+            + company_profile_result.get("count", 0)
+            + operational_efficiency_result.get("count", 0)
         ),
         "plates": plate_result,
         "valuations": valuation_result,
         "financials": financial_result,
         "earnings": earnings_result,
+        "company_profiles": company_profile_result,
+        "operational_efficiency": operational_efficiency_result,
     }
 
 
@@ -691,6 +787,8 @@ def build_advisor_report(force_sync=False):
     valuations = get_valuations(codes)
     financials = get_financials(codes)
     earnings = get_earnings_moves(codes)
+    company_profiles = get_company_profiles(codes)
+    operational_efficiency = get_operational_efficiency(codes)
     if force_sync:
         for position in positions:
             code = position.get("code")
@@ -700,6 +798,8 @@ def build_advisor_report(force_sync=False):
         valuations = get_valuations(codes, force=True)
         financials = get_financials(codes, force=True)
         earnings = get_earnings_moves(codes, force=True)
+        company_profiles = get_company_profiles(codes, force=True)
+        operational_efficiency = get_operational_efficiency(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
     reports = []
@@ -718,6 +818,8 @@ def build_advisor_report(force_sync=False):
             valuation=valuations.get(code),
             financials=financials.get(code),
             earnings=earnings.get(code),
+            company_profile=company_profiles.get(code),
+            operational_efficiency=operational_efficiency.get(code),
         ))
 
     exposure = portfolio_exposure(reports)

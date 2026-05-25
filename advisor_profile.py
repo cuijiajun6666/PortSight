@@ -13,28 +13,39 @@ OWNER_PLATE_FILE = DATA_DIR / "advisor_owner_plates.json"
 VALUATION_FILE = DATA_DIR / "advisor_valuations.json"
 FINANCIALS_FILE = DATA_DIR / "advisor_financials.json"
 EARNINGS_MOVE_FILE = DATA_DIR / "advisor_earnings_moves.json"
+COMPANY_PROFILE_FILE = DATA_DIR / "advisor_company_profiles.json"
+OPERATIONAL_EFFICIENCY_FILE = DATA_DIR / "advisor_operational_efficiency.json"
 OWNER_PLATE_REFRESH_SECONDS = int(os.getenv("ADVISOR_OWNER_PLATE_REFRESH_SECONDS", "86400"))
 VALUATION_REFRESH_SECONDS = int(os.getenv("ADVISOR_VALUATION_REFRESH_SECONDS", "86400"))
 FINANCIALS_REFRESH_SECONDS = int(os.getenv("ADVISOR_FINANCIALS_REFRESH_SECONDS", "86400"))
 EARNINGS_MOVE_REFRESH_SECONDS = int(os.getenv("ADVISOR_EARNINGS_MOVE_REFRESH_SECONDS", "86400"))
+COMPANY_PROFILE_REFRESH_SECONDS = int(os.getenv("ADVISOR_COMPANY_PROFILE_REFRESH_SECONDS", "604800"))
+OPERATIONAL_EFFICIENCY_REFRESH_SECONDS = int(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_REFRESH_SECONDS", "86400"))
 OWNER_PLATE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OWNER_PLATE_REQUEST_INTERVAL_SECONDS", "3.2"))
 VALUATION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_VALUATION_REQUEST_INTERVAL_SECONDS", "1.1"))
 FINANCIALS_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_FINANCIALS_REQUEST_INTERVAL_SECONDS", "1.1"))
 EARNINGS_MOVE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_EARNINGS_MOVE_REQUEST_INTERVAL_SECONDS", "1.1"))
+COMPANY_PROFILE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_COMPANY_PROFILE_REQUEST_INTERVAL_SECONDS", "1.1"))
+OPERATIONAL_EFFICIENCY_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_REQUEST_INTERVAL_SECONDS", "1.1"))
 OWNER_PLATE_BATCH_SIZE = 200
 FINANCIALS_REPORT_COUNT = int(os.getenv("ADVISOR_FINANCIALS_REPORT_COUNT", "6"))
 EARNINGS_MOVE_PERIOD_COUNT = int(os.getenv("ADVISOR_EARNINGS_MOVE_PERIOD_COUNT", "8"))
 EARNINGS_HISTORY_MAX_ROWS = int(os.getenv("ADVISOR_EARNINGS_HISTORY_MAX_ROWS", "600"))
+OPERATIONAL_EFFICIENCY_COUNT = int(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_COUNT", "10"))
 
 _owner_plate_lock = threading.RLock()
 _valuation_lock = threading.RLock()
 _financials_lock = threading.RLock()
 _earnings_move_lock = threading.RLock()
+_company_profile_lock = threading.RLock()
+_operational_efficiency_lock = threading.RLock()
 _rate_limit_lock = threading.RLock()
 _last_owner_plate_request_at = 0.0
 _last_valuation_request_at = 0.0
 _last_financials_request_at = 0.0
 _last_earnings_move_request_at = 0.0
+_last_company_profile_request_at = 0.0
+_last_operational_efficiency_request_at = 0.0
 
 
 def utc_now_iso():
@@ -97,6 +108,24 @@ def save_earnings_move_cache(cache):
     atomic_write_json(EARNINGS_MOVE_FILE, cache)
 
 
+def load_company_profile_cache():
+    return read_json(COMPANY_PROFILE_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_company_profile_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(COMPANY_PROFILE_FILE, cache)
+
+
+def load_operational_efficiency_cache():
+    return read_json(OPERATIONAL_EFFICIENCY_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_operational_efficiency_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(OPERATIONAL_EFFICIENCY_FILE, cache)
+
+
 def cache_is_fresh(symbol_payload, ttl_seconds):
     fetched_at = symbol_payload.get("fetched_at")
     if not fetched_at:
@@ -146,6 +175,26 @@ def wait_for_earnings_move_rate_limit():
         if wait_seconds > 0:
             time.sleep(wait_seconds)
         _last_earnings_move_request_at = time.monotonic()
+
+
+def wait_for_company_profile_rate_limit():
+    global _last_company_profile_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = COMPANY_PROFILE_REQUEST_INTERVAL_SECONDS - (now - _last_company_profile_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_company_profile_request_at = time.monotonic()
+
+
+def wait_for_operational_efficiency_rate_limit():
+    global _last_operational_efficiency_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = OPERATIONAL_EFFICIENCY_REQUEST_INTERVAL_SECONDS - (now - _last_operational_efficiency_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_operational_efficiency_request_at = time.monotonic()
 
 
 def json_value(value):
@@ -637,5 +686,194 @@ def get_earnings_moves(codes, force=False):
     symbols = cache.get("symbols", {})
     return {
         code: symbols.get(code, {}).get("earnings")
+        for code in codes
+    }
+
+
+def summarize_company_profile(data):
+    records = frame_to_records(data)
+    fields = {}
+    for row in records:
+        name = str(row.get("name") or "")
+        if name:
+            fields[name] = row.get("value")
+
+    return {
+        "fields": fields,
+        "records": records,
+        "company_name": fields.get("公司名称") or fields.get("Company Name"),
+        "listed_date": fields.get("上市日期") or fields.get("Listing Date"),
+        "founded_date": fields.get("成立日期") or fields.get("Founded"),
+        "market": fields.get("所属市场") or fields.get("Market"),
+        "employee_num": fields.get("员工数量") or fields.get("Employees"),
+        "website": fields.get("网址") or fields.get("Website"),
+        "business": fields.get("公司业务") or fields.get("Business"),
+        "description": fields.get("公司简介") or fields.get("Company Profile"),
+    }
+
+
+def request_company_profile(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_company_profile_rate_limit()
+        ret, data = quote_ctx.get_company_profile(code)
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_company_profile failed for {code}: {data}")
+    return summarize_company_profile(data)
+
+
+def sync_company_profiles(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _company_profile_lock:
+        cache = load_company_profile_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], COMPANY_PROFILE_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "company_profile": request_company_profile(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "company_profile": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_company_profile_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("company_profile") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_company_profiles(codes, force=False):
+    sync_company_profiles(codes, force=force)
+    cache = load_company_profile_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("company_profile")
+        for code in codes
+    }
+
+
+def compact_operational_efficiency_item(item):
+    return {
+        "fiscal_year": json_value(item.get("fiscal_year")),
+        "financial_type": json_value(item.get("financial_type")),
+        "period_text": json_value(item.get("period_text")),
+        "end_date": json_value(item.get("end_date")),
+        "end_date_str": json_value(item.get("end_date_str")),
+        "employee_num": json_value(item.get("employee_num")),
+        "employee_num_yoy": json_value(item.get("employee_num_yoy")),
+        "income_per_capita": json_value(item.get("income_per_capita")),
+        "income_per_capita_yoy": json_value(item.get("income_per_capita_yoy")),
+        "profit_per_capita": json_value(item.get("profit_per_capita")),
+        "profit_per_capita_yoy": json_value(item.get("profit_per_capita_yoy")),
+        "net_profit_per_capita": json_value(item.get("net_profit_per_capita")),
+        "net_profit_per_capita_yoy": json_value(item.get("net_profit_per_capita_yoy")),
+    }
+
+
+def summarize_operational_efficiency(data):
+    items = [
+        compact_operational_efficiency_item(item)
+        for item in (data.get("item_list", []) or [])[:OPERATIONAL_EFFICIENCY_COUNT]
+    ]
+    latest = items[0] if items else {}
+    return {
+        "currency_code": json_value(data.get("currency_code")),
+        "latest": latest,
+        "items": items,
+        "next_key": json_value(data.get("next_key")),
+    }
+
+
+def request_operational_efficiency(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_operational_efficiency_rate_limit()
+        ret, data = quote_ctx.get_company_operational_efficiency(
+            code,
+            num=OPERATIONAL_EFFICIENCY_COUNT,
+        )
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_company_operational_efficiency failed for {code}: {data}")
+    return summarize_operational_efficiency(data)
+
+
+def sync_operational_efficiency(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _operational_efficiency_lock:
+        cache = load_operational_efficiency_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], OPERATIONAL_EFFICIENCY_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "operational_efficiency": request_operational_efficiency(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "operational_efficiency": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_operational_efficiency_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("operational_efficiency") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_operational_efficiency(codes, force=False):
+    sync_operational_efficiency(codes, force=force)
+    cache = load_operational_efficiency_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("operational_efficiency")
         for code in codes
     }

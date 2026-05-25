@@ -124,6 +124,29 @@ def earnings_features(position):
     }
 
 
+def company_profile_features(position):
+    profile = position.get("profile", {}).get("company_profile") or {}
+    return {
+        "company_market": profile.get("market"),
+        "company_listed_date": profile.get("listed_date"),
+        "company_founded_date": profile.get("founded_date"),
+    }
+
+
+def operational_efficiency_features(position):
+    efficiency = position.get("profile", {}).get("operational_efficiency") or {}
+    return {
+        "employee_num": safe_float(efficiency.get("employee_num"), None),
+        "employee_num_yoy": safe_float(efficiency.get("employee_num_yoy"), None),
+        "income_per_capita": safe_float(efficiency.get("income_per_capita"), None),
+        "income_per_capita_yoy": safe_float(efficiency.get("income_per_capita_yoy"), None),
+        "profit_per_capita": safe_float(efficiency.get("profit_per_capita"), None),
+        "profit_per_capita_yoy": safe_float(efficiency.get("profit_per_capita_yoy"), None),
+        "net_profit_per_capita": safe_float(efficiency.get("net_profit_per_capita"), None),
+        "net_profit_per_capita_yoy": safe_float(efficiency.get("net_profit_per_capita_yoy"), None),
+    }
+
+
 def build_feature_row(report, position):
     daily = position.get("signals", {}).get("daily", {})
     weekly = position.get("signals", {}).get("weekly", {})
@@ -155,6 +178,8 @@ def build_feature_row(report, position):
         **valuation_features(position),
         **financial_features(position),
         **earnings_features(position),
+        **company_profile_features(position),
+        **operational_efficiency_features(position),
     }
 
     signals = [

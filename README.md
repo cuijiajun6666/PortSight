@@ -154,6 +154,8 @@ It uses cached historical K lines and owner-plate data from moomoo:
 /opt/moomoo-backend/data/advisor_valuations.json
 /opt/moomoo-backend/data/advisor_financials.json
 /opt/moomoo-backend/data/advisor_earnings_moves.json
+/opt/moomoo-backend/data/advisor_company_profiles.json
+/opt/moomoo-backend/data/advisor_operational_efficiency.json
 ```
 
 Daily, weekly, and monthly K lines are requested separately from moomoo. Moomoo does not count different K-line periods for the same symbol as separate historical K-line quota usage, but each first-page request still counts toward the per-30-second request rate. The backend caches the result locally and refreshes after market close.
@@ -165,6 +167,8 @@ Valuation data comes from `get_valuation_detail`. It is cached locally and refre
 Financial statement data comes from `get_financials_statements`. It is cached locally and refreshed at most daily by default.
 
 Earnings-event price behavior comes from `get_financials_earnings_price_move` and `get_financials_earnings_price_history`. It is cached locally and refreshed at most daily by default.
+
+Company profile and operational efficiency data come from `get_company_profile` and `get_company_operational_efficiency`. Profile data is refreshed weekly by default; operational efficiency is refreshed daily by default.
 
 Advisor endpoints:
 
