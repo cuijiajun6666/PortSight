@@ -198,6 +198,23 @@ def shareholders_features(position):
     }
 
 
+def insider_features(position):
+    trades = position.get("profile", {}).get("insider_trades") or {}
+    holders = position.get("profile", {}).get("insider_holders") or {}
+    return {
+        "insider_trade_count": safe_float(trades.get("trade_count"), None),
+        "insider_buy_count": safe_float(trades.get("buy_count"), None),
+        "insider_sell_count": safe_float(trades.get("sell_count"), None),
+        "insider_proposed_sale_count": safe_float(trades.get("proposed_sale_count"), None),
+        "insider_net_trade_shares": safe_float(trades.get("net_trade_shares"), None),
+        "insider_total_count": safe_float(holders.get("insider_total_count"), None),
+        "insider_bought_count": safe_float(holders.get("insider_bought_count"), None),
+        "insider_sold_count": safe_float(holders.get("insider_sold_count"), None),
+        "insider_top_holder_pct": safe_float(holders.get("top_holder_pct"), None),
+        "insider_top5_holder_pct": safe_float(holders.get("top5_holder_pct"), None),
+    }
+
+
 def build_feature_row(report, position):
     daily = position.get("signals", {}).get("daily", {})
     weekly = position.get("signals", {}).get("weekly", {})
@@ -234,6 +251,7 @@ def build_feature_row(report, position):
         **capital_features(position),
         **short_features(position),
         **shareholders_features(position),
+        **insider_features(position),
     }
 
     signals = [

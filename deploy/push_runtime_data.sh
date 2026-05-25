@@ -11,7 +11,7 @@ mkdir -p data
 
 files_to_add=()
 
-for name in asset_snapshots.json trade_deals.json advisor_state.json advisor_symbol_meta.json advisor_training_samples.json advisor_owner_plates.json advisor_valuations.json advisor_financials.json advisor_earnings_moves.json advisor_company_profiles.json advisor_operational_efficiency.json advisor_capital_flow.json advisor_capital_distribution.json advisor_daily_short_volume.json advisor_short_interest.json advisor_shareholders_overview.json advisor_shareholders_changes.json; do
+for name in asset_snapshots.json trade_deals.json advisor_state.json advisor_symbol_meta.json advisor_training_samples.json advisor_owner_plates.json advisor_valuations.json advisor_financials.json advisor_earnings_moves.json advisor_company_profiles.json advisor_operational_efficiency.json advisor_capital_flow.json advisor_capital_distribution.json advisor_daily_short_volume.json advisor_short_interest.json advisor_shareholders_overview.json advisor_shareholders_changes.json advisor_insider_trades.json advisor_insider_holders.json; do
   if [[ -f "${DATA_DIR}/${name}" ]]; then
     cp "${DATA_DIR}/${name}" "data/${name}"
     files_to_add+=("data/${name}")

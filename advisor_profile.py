@@ -21,6 +21,8 @@ DAILY_SHORT_VOLUME_FILE = DATA_DIR / "advisor_daily_short_volume.json"
 SHORT_INTEREST_FILE = DATA_DIR / "advisor_short_interest.json"
 SHAREHOLDERS_OVERVIEW_FILE = DATA_DIR / "advisor_shareholders_overview.json"
 SHAREHOLDERS_CHANGES_FILE = DATA_DIR / "advisor_shareholders_changes.json"
+INSIDER_TRADES_FILE = DATA_DIR / "advisor_insider_trades.json"
+INSIDER_HOLDERS_FILE = DATA_DIR / "advisor_insider_holders.json"
 OWNER_PLATE_REFRESH_SECONDS = int(os.getenv("ADVISOR_OWNER_PLATE_REFRESH_SECONDS", "86400"))
 VALUATION_REFRESH_SECONDS = int(os.getenv("ADVISOR_VALUATION_REFRESH_SECONDS", "86400"))
 FINANCIALS_REFRESH_SECONDS = int(os.getenv("ADVISOR_FINANCIALS_REFRESH_SECONDS", "86400"))
@@ -33,6 +35,8 @@ DAILY_SHORT_VOLUME_REFRESH_SECONDS = int(os.getenv("ADVISOR_DAILY_SHORT_VOLUME_R
 SHORT_INTEREST_REFRESH_SECONDS = int(os.getenv("ADVISOR_SHORT_INTEREST_REFRESH_SECONDS", "86400"))
 SHAREHOLDERS_OVERVIEW_REFRESH_SECONDS = int(os.getenv("ADVISOR_SHAREHOLDERS_OVERVIEW_REFRESH_SECONDS", "86400"))
 SHAREHOLDERS_CHANGES_REFRESH_SECONDS = int(os.getenv("ADVISOR_SHAREHOLDERS_CHANGES_REFRESH_SECONDS", "86400"))
+INSIDER_TRADES_REFRESH_SECONDS = int(os.getenv("ADVISOR_INSIDER_TRADES_REFRESH_SECONDS", "86400"))
+INSIDER_HOLDERS_REFRESH_SECONDS = int(os.getenv("ADVISOR_INSIDER_HOLDERS_REFRESH_SECONDS", "86400"))
 OWNER_PLATE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OWNER_PLATE_REQUEST_INTERVAL_SECONDS", "3.2"))
 VALUATION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_VALUATION_REQUEST_INTERVAL_SECONDS", "1.1"))
 FINANCIALS_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_FINANCIALS_REQUEST_INTERVAL_SECONDS", "1.1"))
@@ -45,6 +49,8 @@ DAILY_SHORT_VOLUME_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_DAILY_SHO
 SHORT_INTEREST_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_SHORT_INTEREST_REQUEST_INTERVAL_SECONDS", "1.1"))
 SHAREHOLDERS_OVERVIEW_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_SHAREHOLDERS_OVERVIEW_REQUEST_INTERVAL_SECONDS", "1.1"))
 SHAREHOLDERS_CHANGES_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_SHAREHOLDERS_CHANGES_REQUEST_INTERVAL_SECONDS", "1.1"))
+INSIDER_TRADES_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_INSIDER_TRADES_REQUEST_INTERVAL_SECONDS", "1.1"))
+INSIDER_HOLDERS_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_INSIDER_HOLDERS_REQUEST_INTERVAL_SECONDS", "1.1"))
 OWNER_PLATE_BATCH_SIZE = 200
 FINANCIALS_REPORT_COUNT = int(os.getenv("ADVISOR_FINANCIALS_REPORT_COUNT", "6"))
 EARNINGS_MOVE_PERIOD_COUNT = int(os.getenv("ADVISOR_EARNINGS_MOVE_PERIOD_COUNT", "8"))
@@ -54,6 +60,8 @@ CAPITAL_FLOW_MAX_ROWS = int(os.getenv("ADVISOR_CAPITAL_FLOW_MAX_ROWS", "260"))
 CAPITAL_FLOW_PERIOD = os.getenv("ADVISOR_CAPITAL_FLOW_PERIOD", "DAY")
 SHORT_DATA_MAX_ROWS = int(os.getenv("ADVISOR_SHORT_DATA_MAX_ROWS", "120"))
 SHAREHOLDERS_CHANGES_COUNT = int(os.getenv("ADVISOR_SHAREHOLDERS_CHANGES_COUNT", "100"))
+INSIDER_TRADES_COUNT = int(os.getenv("ADVISOR_INSIDER_TRADES_COUNT", "50"))
+INSIDER_HOLDERS_COUNT = int(os.getenv("ADVISOR_INSIDER_HOLDERS_COUNT", "20"))
 
 _owner_plate_lock = threading.RLock()
 _valuation_lock = threading.RLock()
@@ -67,6 +75,8 @@ _daily_short_volume_lock = threading.RLock()
 _short_interest_lock = threading.RLock()
 _shareholders_overview_lock = threading.RLock()
 _shareholders_changes_lock = threading.RLock()
+_insider_trades_lock = threading.RLock()
+_insider_holders_lock = threading.RLock()
 _rate_limit_lock = threading.RLock()
 _last_owner_plate_request_at = 0.0
 _last_valuation_request_at = 0.0
@@ -80,6 +90,8 @@ _last_daily_short_volume_request_at = 0.0
 _last_short_interest_request_at = 0.0
 _last_shareholders_overview_request_at = 0.0
 _last_shareholders_changes_request_at = 0.0
+_last_insider_trades_request_at = 0.0
+_last_insider_holders_request_at = 0.0
 
 
 def utc_now_iso():
@@ -214,6 +226,24 @@ def save_shareholders_changes_cache(cache):
     atomic_write_json(SHAREHOLDERS_CHANGES_FILE, cache)
 
 
+def load_insider_trades_cache():
+    return read_json(INSIDER_TRADES_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_insider_trades_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(INSIDER_TRADES_FILE, cache)
+
+
+def load_insider_holders_cache():
+    return read_json(INSIDER_HOLDERS_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_insider_holders_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(INSIDER_HOLDERS_FILE, cache)
+
+
 def cache_is_fresh(symbol_payload, ttl_seconds):
     fetched_at = symbol_payload.get("fetched_at")
     if not fetched_at:
@@ -343,6 +373,26 @@ def wait_for_shareholders_changes_rate_limit():
         if wait_seconds > 0:
             time.sleep(wait_seconds)
         _last_shareholders_changes_request_at = time.monotonic()
+
+
+def wait_for_insider_trades_rate_limit():
+    global _last_insider_trades_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = INSIDER_TRADES_REQUEST_INTERVAL_SECONDS - (now - _last_insider_trades_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_insider_trades_request_at = time.monotonic()
+
+
+def wait_for_insider_holders_rate_limit():
+    global _last_insider_holders_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = INSIDER_HOLDERS_REQUEST_INTERVAL_SECONDS - (now - _last_insider_holders_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_insider_holders_request_at = time.monotonic()
 
 
 def json_value(value):
@@ -1631,5 +1681,205 @@ def get_shareholders_changes(codes, force=False):
     symbols = cache.get("symbols", {})
     return {
         code: symbols.get(code, {}).get("shareholders_changes")
+        for code in codes
+    }
+
+
+def is_us_code(code):
+    return str(code).startswith("US.")
+
+
+def summarize_insider_trades(data):
+    records = frame_to_records(data, max_rows=INSIDER_TRADES_COUNT)
+    buys = []
+    sells = []
+    proposed_sales = []
+    for row in records:
+        shares = to_float(row.get("trade_shares"))
+        transaction_type = str(row.get("transaction_type") or "")
+        if shares > 0 or "买" in transaction_type or "获得" in transaction_type:
+            buys.append(row)
+        if shares < 0 or "卖" in transaction_type or "出售" in transaction_type:
+            sells.append(row)
+        if row.get("is_proposed_sale_of_securities") or "意向出售" in transaction_type:
+            proposed_sales.append(row)
+
+    buy_shares = sum(max(0, to_float(row.get("trade_shares"))) for row in buys)
+    sell_shares = sum(abs(min(0, to_float(row.get("trade_shares")))) for row in sells)
+    largest_sell = min(records, key=lambda row: to_float(row.get("trade_shares")), default={})
+    largest_buy = max(records, key=lambda row: to_float(row.get("trade_shares")), default={})
+    latest = records[0] if records else {}
+
+    return {
+        "summary": {
+            "latest_trade_date": latest.get("max_trade_date_str") or latest.get("min_trade_date_str"),
+            "all_count": latest.get("all_count"),
+            "trade_count": len(records),
+            "buy_count": len(buys),
+            "sell_count": len(sells),
+            "proposed_sale_count": len(proposed_sales),
+            "buy_shares": buy_shares,
+            "sell_shares": sell_shares,
+            "net_trade_shares": buy_shares - sell_shares,
+            "largest_buy_name": largest_buy.get("name"),
+            "largest_buy_shares": largest_buy.get("trade_shares"),
+            "largest_sell_name": largest_sell.get("name"),
+            "largest_sell_shares": largest_sell.get("trade_shares"),
+        },
+        "rows": records,
+    }
+
+
+def request_insider_trades(code):
+    if not is_us_code(code):
+        return {"summary": {"unsupported": True, "reason": "insider trades are only meaningful for US stocks"}, "rows": []}
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_insider_trades_rate_limit()
+        ret, data = quote_ctx.get_insider_trade_list(
+            code,
+            num=INSIDER_TRADES_COUNT,
+        )
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_insider_trade_list failed for {code}: {data}")
+    return summarize_insider_trades(data)
+
+
+def sync_insider_trades(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _insider_trades_lock:
+        cache = load_insider_trades_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], INSIDER_TRADES_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "insider_trades": request_insider_trades(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "insider_trades": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_insider_trades_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("insider_trades") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {"ok": all(item.get("ok") for item in results), "count": len(results), "results": results}
+
+
+def get_insider_trades(codes, force=False):
+    sync_insider_trades(codes, force=force)
+    cache = load_insider_trades_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("insider_trades")
+        for code in codes
+    }
+
+
+def summarize_insider_holders(data):
+    records = frame_to_records(data, max_rows=INSIDER_HOLDERS_COUNT)
+    latest = records[0] if records else {}
+    top5_pct = sum(to_float(row.get("holder_pct")) for row in records[:5])
+    top10_pct = sum(to_float(row.get("holder_pct")) for row in records[:10])
+    return {
+        "summary": {
+            "insider_total_count": latest.get("insider_total_count"),
+            "insider_bought_count": latest.get("insider_bought_count"),
+            "insider_sold_count": latest.get("insider_sold_count"),
+            "top_holder_name": latest.get("name"),
+            "top_holder_title": latest.get("title"),
+            "top_holder_pct": latest.get("holder_pct"),
+            "top5_holder_pct": top5_pct,
+            "top10_holder_pct": top10_pct,
+            "holder_count": len(records),
+        },
+        "rows": records,
+    }
+
+
+def request_insider_holders(code):
+    if not is_us_code(code):
+        return {"summary": {"unsupported": True, "reason": "insider holders are only meaningful for US stocks"}, "rows": []}
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_insider_holders_rate_limit()
+        ret, data = quote_ctx.get_insider_holder_list(
+            code,
+            num=INSIDER_HOLDERS_COUNT,
+        )
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_insider_holder_list failed for {code}: {data}")
+    return summarize_insider_holders(data)
+
+
+def sync_insider_holders(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _insider_holders_lock:
+        cache = load_insider_holders_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], INSIDER_HOLDERS_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "insider_holders": request_insider_holders(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "insider_holders": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_insider_holders_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("insider_holders") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {"ok": all(item.get("ok") for item in results), "count": len(results), "results": results}
+
+
+def get_insider_holders(codes, force=False):
+    sync_insider_holders(codes, force=force)
+    cache = load_insider_holders_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("insider_holders")
         for code in codes
     }

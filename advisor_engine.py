@@ -18,11 +18,15 @@ from advisor_profile import (
     get_daily_short_volumes,
     get_earnings_moves,
     get_financials,
+    get_insider_holders,
+    get_insider_trades,
     get_operational_efficiency,
     get_owner_plates,
     get_shareholders_changes,
     get_shareholders_overviews,
     get_valuations,
+    sync_insider_holders,
+    sync_insider_trades,
     sync_capital_distributions,
     sync_capital_flows,
     sync_company_profiles,
@@ -644,6 +648,56 @@ def shareholders_risk_adjustment(shareholders_overview, shareholders_changes):
     return adjustment, reasons
 
 
+def insider_trades_summary(insider_trades):
+    return (insider_trades or {}).get("summary", {}) or {}
+
+
+def insider_holders_summary(insider_holders):
+    return (insider_holders or {}).get("summary", {}) or {}
+
+
+def insider_risk_adjustment(insider_trades, insider_holders):
+    trades = insider_trades_summary(insider_trades)
+    holders = insider_holders_summary(insider_holders)
+    adjustment = 0
+    reasons = []
+
+    if trades.get("unsupported") or holders.get("unsupported"):
+        return adjustment, reasons
+
+    sell_count = safe_float(trades.get("sell_count"), 0)
+    buy_count = safe_float(trades.get("buy_count"), 0)
+    proposed_sale_count = safe_float(trades.get("proposed_sale_count"), 0)
+    net_trade_shares = safe_float(trades.get("net_trade_shares"), None)
+    bought_count = safe_float(holders.get("insider_bought_count"), None)
+    sold_count = safe_float(holders.get("insider_sold_count"), None)
+
+    if sell_count > buy_count * 2 and sell_count >= 3:
+        adjustment += 5
+        reasons.append("近期内部人卖出记录明显多于买入")
+    elif buy_count > sell_count and buy_count >= 2:
+        adjustment -= 3
+        reasons.append("近期内部人买入记录多于卖出")
+
+    if proposed_sale_count >= 2:
+        adjustment += 3
+        reasons.append("存在多笔内部人意向出售记录")
+
+    if net_trade_shares is not None:
+        if net_trade_shares < 0:
+            adjustment += 3
+            reasons.append("内部人交易净卖出")
+        elif net_trade_shares > 0:
+            adjustment -= 2
+            reasons.append("内部人交易净买入")
+
+    if bought_count is not None and sold_count is not None and sold_count > bought_count:
+        adjustment += 2
+        reasons.append("内部人统计显示卖出人数多于买入人数")
+
+    return adjustment, reasons
+
+
 def score_position(
     position,
     daily_frame,
@@ -662,6 +716,8 @@ def score_position(
     short_interest=None,
     shareholders_overview=None,
     shareholders_changes=None,
+    insider_trades=None,
+    insider_holders=None,
 ):
     code = position.get("code", "")
     plates = plates or []
@@ -740,6 +796,7 @@ def score_position(
         shareholders_overview,
         shareholders_changes,
     )
+    insider_addon, insider_reasons = insider_risk_adjustment(insider_trades, insider_holders)
     risk_score = (
         volatility_risk * weights["volatility"]
         + drawdown_risk * weights["drawdown"]
@@ -754,6 +811,7 @@ def score_position(
         + capital_addon
         + short_addon
         + shareholders_addon
+        + insider_addon
         + max(0, 50 - trend_score) * weights["trend"]
     )
     risk_score = round(max(0, min(100, risk_score)), 1)
@@ -800,6 +858,7 @@ def score_position(
     reasons.extend(capital_reasons)
     reasons.extend(short_reasons)
     reasons.extend(shareholders_reasons)
+    reasons.extend(insider_reasons)
 
     return {
         "code": code,
@@ -822,6 +881,8 @@ def score_position(
             "short_interest": short_interest_summary(short_interest),
             "shareholders_overview": shareholders_overview_summary(shareholders_overview),
             "shareholders_changes": shareholders_changes_summary(shareholders_changes),
+            "insider_trades": insider_trades_summary(insider_trades),
+            "insider_holders": insider_holders_summary(insider_holders),
         },
         "weight": round(weight, 4),
         "market_val": market_val,
@@ -936,6 +997,8 @@ def sync_advisor_profiles(force=False):
     short_interest_result = sync_short_interests(codes, force=force)
     shareholders_overview_result = sync_shareholders_overviews(codes, force=force)
     shareholders_changes_result = sync_shareholders_changes(codes, force=force)
+    insider_trades_result = sync_insider_trades(codes, force=force)
+    insider_holders_result = sync_insider_holders(codes, force=force)
     return {
         "ok": (
             plate_result.get("ok")
@@ -950,6 +1013,8 @@ def sync_advisor_profiles(force=False):
             and short_interest_result.get("ok")
             and shareholders_overview_result.get("ok")
             and shareholders_changes_result.get("ok")
+            and insider_trades_result.get("ok")
+            and insider_holders_result.get("ok")
         ),
         "count": (
             plate_result.get("count", 0)
@@ -964,6 +1029,8 @@ def sync_advisor_profiles(force=False):
             + short_interest_result.get("count", 0)
             + shareholders_overview_result.get("count", 0)
             + shareholders_changes_result.get("count", 0)
+            + insider_trades_result.get("count", 0)
+            + insider_holders_result.get("count", 0)
         ),
         "plates": plate_result,
         "valuations": valuation_result,
@@ -977,6 +1044,8 @@ def sync_advisor_profiles(force=False):
         "short_interests": short_interest_result,
         "shareholders_overviews": shareholders_overview_result,
         "shareholders_changes": shareholders_changes_result,
+        "insider_trades": insider_trades_result,
+        "insider_holders": insider_holders_result,
     }
 
 
@@ -1005,6 +1074,8 @@ def build_advisor_report(force_sync=False):
     short_interests = get_short_interests(codes)
     shareholders_overviews = get_shareholders_overviews(codes)
     shareholders_changes = get_shareholders_changes(codes)
+    insider_trades = get_insider_trades(codes)
+    insider_holders = get_insider_holders(codes)
     if force_sync:
         for position in positions:
             code = position.get("code")
@@ -1022,6 +1093,8 @@ def build_advisor_report(force_sync=False):
         short_interests = get_short_interests(codes, force=True)
         shareholders_overviews = get_shareholders_overviews(codes, force=True)
         shareholders_changes = get_shareholders_changes(codes, force=True)
+        insider_trades = get_insider_trades(codes, force=True)
+        insider_holders = get_insider_holders(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
     reports = []
@@ -1048,6 +1121,8 @@ def build_advisor_report(force_sync=False):
             short_interest=short_interests.get(code),
             shareholders_overview=shareholders_overviews.get(code),
             shareholders_changes=shareholders_changes.get(code),
+            insider_trades=insider_trades.get(code),
+            insider_holders=insider_holders.get(code),
         ))
 
     exposure = portfolio_exposure(reports)

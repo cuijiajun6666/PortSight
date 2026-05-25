@@ -25,3 +25,5 @@ data/*
 !data/advisor_short_interest.json
 !data/advisor_shareholders_overview.json
 !data/advisor_shareholders_changes.json
+!data/advisor_insider_trades.json
+!data/advisor_insider_holders.json

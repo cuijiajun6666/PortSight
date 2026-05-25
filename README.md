@@ -162,6 +162,8 @@ It uses cached historical K lines and owner-plate data from moomoo:
 /opt/moomoo-backend/data/advisor_short_interest.json
 /opt/moomoo-backend/data/advisor_shareholders_overview.json
 /opt/moomoo-backend/data/advisor_shareholders_changes.json
+/opt/moomoo-backend/data/advisor_insider_trades.json
+/opt/moomoo-backend/data/advisor_insider_holders.json
 ```
 
 Daily, weekly, and monthly K lines are requested separately from moomoo. Moomoo does not count different K-line periods for the same symbol as separate historical K-line quota usage, but each first-page request still counts toward the per-30-second request rate. The backend caches the result locally and refreshes after market close.
@@ -181,6 +183,8 @@ Capital flow and distribution data come from `get_capital_flow` and `get_capital
 Short volume and short interest data come from `get_daily_short_volume` and `get_short_interest`. They are cached locally and refreshed daily by default.
 
 Shareholder overview and holding changes come from `get_shareholders_overview` and `get_shareholders_holding_changes`. They are cached locally and refreshed daily by default.
+
+Insider trades and insider holder lists come from `get_insider_trade_list` and `get_insider_holder_list`. They are meaningful for US stocks and are cached locally daily by default.
 
 Advisor endpoints:
 
