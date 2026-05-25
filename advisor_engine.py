@@ -11,6 +11,7 @@ from advisor_kline_cache import (
     sync_all_period_klines,
     sync_daily_klines,
 )
+from advisor_profile import get_owner_plates, sync_owner_plates
 from config import DATA_DIR
 from routes.positions import get_positions
 
@@ -29,9 +30,9 @@ DEFAULT_WEIGHTS = {
 
 DEFAULT_SYMBOL_META = {
     "US.SIDU": {
-        "sector": "Space / Aerospace",
         "theme": ["SpaceX sentiment", "small cap", "high volatility"],
         "risk_tier": "speculative",
+        "size_tier": "small_cap",
     }
 }
 
@@ -153,8 +154,68 @@ def aggregate_period(frame, freq):
     return result.reset_index(drop=True)
 
 
-def score_position(position, daily_frame, portfolio_value, weights, meta):
+def plate_names(plates):
+    return [
+        str(plate.get("plate_name", ""))
+        for plate in plates
+        if plate.get("plate_name")
+    ]
+
+
+def classify_sector(code, meta, plates):
+    if meta.get(code, {}).get("sector"):
+        return meta[code]["sector"]
+
+    names = plate_names(plates)
+    keywords = [
+        ("Semiconductor", ["semiconductor", "chip", "芯片", "半导体"]),
+        ("Technology", ["technology", "software", "internet", "科技", "软件", "互联网"]),
+        ("Space / Aerospace", ["space", "aerospace", "satellite", "航天", "航空", "卫星"]),
+        ("Biotech / Healthcare", ["biotech", "health", "medical", "pharma", "生物", "医疗", "医药"]),
+        ("Energy", ["energy", "oil", "gas", "solar", "新能源", "能源", "石油"]),
+        ("Financials", ["bank", "financial", "insurance", "银行", "金融", "保险"]),
+        ("Consumer", ["consumer", "retail", "消费", "零售"]),
+        ("Crypto / Digital Assets", ["crypto", "bitcoin", "blockchain", "加密", "区块链"]),
+    ]
+    lower_names = [name.lower() for name in names]
+    for sector, words in keywords:
+        if any(word.lower() in name for name in lower_names for word in words):
+            return sector
+
+    for name in names:
+        lower_name = name.lower()
+        if not any(skip in lower_name for skip in ["constituent", "index", "adr", "etf", "成份", "指数"]):
+            return name
+    return "Unknown"
+
+
+def infer_size_tier(code, meta, plates):
+    configured = meta.get(code, {}).get("size_tier")
+    if configured:
+        return configured
+    names = " ".join(plate_names(plates)).lower()
+    if any(word in names for word in ["micro", "small cap", "small-cap", "小盘"]):
+        return "small_cap"
+    if any(word in names for word in ["mega", "large cap", "large-cap", "大盘"]):
+        return "large_cap"
+    return "unknown"
+
+
+def volatility_tier(volatility):
+    if volatility >= 1.0:
+        return "extreme"
+    if volatility >= 0.65:
+        return "high"
+    if volatility >= 0.35:
+        return "medium"
+    return "low"
+
+
+def score_position(position, daily_frame, portfolio_value, weights, meta, plates=None):
     code = position.get("code", "")
+    plates = plates or []
+    sector = "ETF" if position.get("is_etf") else classify_sector(code, meta, plates)
+    size_tier = infer_size_tier(code, meta, plates)
     market_val = safe_float(position.get("market_val"))
     weight = market_val / portfolio_value if portfolio_value > 0 else 0
     indicators = add_indicators(daily_frame)
@@ -182,6 +243,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta):
     ma60 = safe_float(latest.get("ma60"))
     rsi = safe_float(latest.get("rsi14"), 50)
     vol60 = safe_float(latest.get("volatility_60d"))
+    vol_tier = volatility_tier(vol60)
     drawdown = abs(safe_float(latest.get("drawdown")))
     ret20 = safe_float(latest.get("ret_20d"))
     ret60 = safe_float(latest.get("ret_60d"))
@@ -215,11 +277,15 @@ def score_position(position, daily_frame, portfolio_value, weights, meta):
     concentration_risk = min(100, weight * 250)
     risk_tier = meta.get(code, {}).get("risk_tier", "")
     speculative_addon = 15 if risk_tier == "speculative" else 0
+    size_addon = 8 if size_tier == "small_cap" else 0
+    volatility_addon = 10 if vol_tier == "extreme" else 5 if vol_tier == "high" else 0
     risk_score = (
         volatility_risk * weights["volatility"]
         + drawdown_risk * weights["drawdown"]
         + concentration_risk * weights["position_weight"]
         + speculative_addon
+        + size_addon
+        + volatility_addon
         + max(0, 50 - trend_score) * weights["trend"]
     )
     risk_score = round(max(0, min(100, risk_score)), 1)
@@ -255,12 +321,22 @@ def score_position(position, daily_frame, portfolio_value, weights, meta):
 
     if safe_float(position.get("unrealized_pl")) > 0 and risk_score >= 60:
         reasons.append("已有浮盈且风险分偏高，适合预设分批止盈计划")
+    if size_tier == "small_cap":
+        reasons.append("小盘/投机属性较强，更适合分批处理而不是一次性加仓")
+    if vol_tier in ("high", "extreme"):
+        reasons.append("历史K线显示波动率偏高，仓位上限应低于普通大盘股")
 
     return {
         "code": code,
         "name": position.get("name", ""),
-        "sector": meta.get(code, {}).get("sector", "Unknown"),
-        "theme": meta.get(code, {}).get("theme", []),
+        "sector": sector,
+        "theme": meta.get(code, {}).get("theme", []) + plate_names(plates)[:5],
+        "profile": {
+            "risk_tier": risk_tier or "normal",
+            "size_tier": size_tier,
+            "volatility_tier": vol_tier,
+            "plates": plates,
+        },
         "weight": round(weight, 4),
         "market_val": market_val,
         "close": close,
@@ -280,6 +356,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta):
                 "ma60": round(ma60, 4),
                 "rsi14": round(rsi, 2),
                 "volatility_60d": round(vol60, 4),
+                "volatility_tier": vol_tier,
             },
             "weekly": {
                 "boll_position": round(safe_float(latest_week.get("boll_position"), 0.5), 4),
@@ -352,6 +429,18 @@ def sync_advisor_klines(force=False):
     }
 
 
+def sync_advisor_profiles(force=False):
+    positions_result = get_positions()
+    if not positions_result.get("ok"):
+        return positions_result
+    codes = [
+        item["code"]
+        for item in positions_result.get("positions", [])
+        if item.get("code") and not item.get("is_etf")
+    ]
+    return sync_owner_plates(codes, force=force)
+
+
 def build_advisor_report(force_sync=False):
     state = load_advisor_state()
     meta = load_symbol_meta()
@@ -360,11 +449,18 @@ def build_advisor_report(force_sync=False):
         return positions_result
 
     positions = positions_result.get("positions", [])
+    codes = [
+        item.get("code")
+        for item in positions
+        if item.get("code") and not item.get("is_etf")
+    ]
+    owner_plates = get_owner_plates(codes)
     if force_sync:
         for position in positions:
             code = position.get("code")
             if code:
                 sync_all_period_klines(code, force=True)
+        owner_plates = get_owner_plates(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
     reports = []
@@ -373,7 +469,14 @@ def build_advisor_report(force_sync=False):
         if not code:
             continue
         frame = get_daily_klines(code)
-        reports.append(score_position(position, frame, portfolio_value, state["weights"], meta))
+        reports.append(score_position(
+            position,
+            frame,
+            portfolio_value,
+            state["weights"],
+            meta,
+            plates=owner_plates.get(code, []),
+        ))
 
     exposure = portfolio_exposure(reports)
     max_position = max([item.get("weight", 0) for item in reports], default=0)

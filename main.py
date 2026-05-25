@@ -13,7 +13,7 @@ from routes.orders import router as orders_router
 from routes.advisor import router as advisor_router
 from market_rt_data import sync_market_intraday_cache
 from deal_cache import start_deal_push_listener, stop_deal_push_listener
-from advisor_engine import build_advisor_report, sync_advisor_klines
+from advisor_engine import build_advisor_report, sync_advisor_klines, sync_advisor_profiles
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -75,10 +75,12 @@ def sync_market_intraday_if_needed():
 def refresh_advisor_after_close():
     try:
         sync_result = sync_advisor_klines()
+        profile_result = sync_advisor_profiles()
         report = build_advisor_report()
         print(
             "智能持仓建议已刷新: "
             f"{sync_result.get('count', 0)} K线任务, "
+            f"{profile_result.get('count', 0)} 画像任务, "
             f"组合风险 {report.get('portfolio', {}).get('risk_score')}"
         )
     except Exception as exc:

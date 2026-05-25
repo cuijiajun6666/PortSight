@@ -6,6 +6,7 @@ from advisor_engine import (
     load_advisor_state,
     load_latest_report,
     sync_advisor_klines,
+    sync_advisor_profiles,
 )
 
 
@@ -23,6 +24,11 @@ def get_advisor_state():
 @router.post("/advisor/sync_klines")
 def post_sync_advisor_klines(force: bool = False):
     return sync_advisor_klines(force=force)
+
+
+@router.post("/advisor/sync_profiles")
+def post_sync_advisor_profiles(force: bool = False):
+    return sync_advisor_profiles(force=force)
 
 
 @router.post("/advisor/refresh")

@@ -144,15 +144,18 @@ The timer runs daily at `22:30 UTC`, after the usual US market close snapshot jo
 
 The advisor is a rule-based portfolio analysis engine for medium/long-term holding decisions. It does not place orders.
 
-It uses cached historical K lines from moomoo:
+It uses cached historical K lines and owner-plate data from moomoo:
 
 ```text
 /opt/moomoo-backend/data/klines/day
 /opt/moomoo-backend/data/klines/week
 /opt/moomoo-backend/data/klines/month
+/opt/moomoo-backend/data/advisor_owner_plates.json
 ```
 
 Daily, weekly, and monthly K lines are requested separately from moomoo. Moomoo does not count different K-line periods for the same symbol as separate historical K-line quota usage, but each first-page request still counts toward the per-30-second request rate. The backend caches the result locally and refreshes after market close.
+
+Owner-plate data comes from `get_owner_plate`. It is cached locally and refreshed at most daily by default.
 
 Advisor endpoints:
 
@@ -161,6 +164,7 @@ curl http://127.0.0.1:8000/advisor/suggestions
 curl "http://127.0.0.1:8000/advisor/suggestions?refresh=true"
 curl "http://127.0.0.1:8000/advisor/symbol?symbol=US.SIDU"
 curl -X POST "http://127.0.0.1:8000/advisor/sync_klines"
+curl -X POST "http://127.0.0.1:8000/advisor/sync_profiles"
 curl -X POST "http://127.0.0.1:8000/advisor/refresh"
 ```
 
