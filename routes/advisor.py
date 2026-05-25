@@ -2,9 +2,12 @@ from fastapi import APIRouter
 
 from advisor_engine import (
     add_watch_symbol,
+    acknowledge_watch_alert,
     build_advisor_report,
     build_candidate_advice,
+    get_advisor_summary,
     get_symbol_advice,
+    get_watch_alerts,
     load_advisor_state,
     load_latest_report,
     load_watchlist,
@@ -56,6 +59,11 @@ def get_advisor_suggestions(refresh: bool = False):
     return report
 
 
+@router.get("/advisor/summary")
+def get_summary(refresh: bool = False):
+    return get_advisor_summary(refresh=refresh)
+
+
 @router.get("/advisor/symbol")
 def get_advisor_symbol(symbol: str, refresh: bool = False):
     return get_symbol_advice(symbol, refresh=refresh)
@@ -84,6 +92,16 @@ def post_advisor_watchlist(symbol: str, note: str = "", refresh: bool = True):
 @router.post("/advisor/watchlist/refresh")
 def post_advisor_watchlist_refresh(force_sync: bool = False):
     return refresh_watchlist(force_sync=force_sync)
+
+
+@router.get("/advisor/alerts")
+def get_advisor_alerts(include_acknowledged: bool = False):
+    return get_watch_alerts(include_acknowledged=include_acknowledged)
+
+
+@router.post("/advisor/alerts/ack")
+def post_advisor_alert_ack(symbol: str | None = None, alert_id: str | None = None):
+    return acknowledge_watch_alert(symbol=symbol, alert_id=alert_id)
 
 
 @router.patch("/advisor/watchlist")

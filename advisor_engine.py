@@ -1200,6 +1200,70 @@ def load_latest_report():
     return read_json(ADVISOR_REPORT_FILE, {"ok": False, "error": "advisor report not generated yet"})
 
 
+def compact_position_advice(position):
+    return {
+        "code": position.get("code"),
+        "name": position.get("name"),
+        "sector": position.get("sector"),
+        "weight": position.get("weight"),
+        "market_val": position.get("market_val"),
+        "close": position.get("close"),
+        "risk_score": position.get("risk_score"),
+        "technical_score": position.get("technical_score"),
+        "action": position.get("action"),
+        "suggestion": position.get("suggestion"),
+        "reasons": position.get("reasons", []),
+        "prediction": position.get("prediction", {}),
+        "signals": position.get("signals", {}),
+        "profile": {
+            "risk_tier": position.get("profile", {}).get("risk_tier"),
+            "size_tier": position.get("profile", {}).get("size_tier"),
+            "volatility_tier": position.get("profile", {}).get("volatility_tier"),
+            "valuation": position.get("profile", {}).get("valuation"),
+            "capital_flow": position.get("profile", {}).get("capital_flow"),
+            "short_interest": position.get("profile", {}).get("short_interest"),
+            "shareholders_changes": position.get("profile", {}).get("shareholders_changes"),
+            "insider_trades": position.get("profile", {}).get("insider_trades"),
+        },
+    }
+
+
+def compact_report(report):
+    if not report.get("ok"):
+        return report
+    portfolio = report.get("portfolio", {})
+    portfolio_suggestion = "组合风险正常，继续按计划观察。"
+    if portfolio.get("risk_score", 0) >= 70:
+        portfolio_suggestion = "组合风险偏高，优先降低集中仓位和高波动标的。"
+    elif portfolio.get("risk_score", 0) >= 45:
+        portfolio_suggestion = "组合有一定集中度或波动压力，适合控制新增仓位。"
+    return {
+        "ok": True,
+        "updated_at": report.get("updated_at"),
+        "portfolio": {
+            "market_value": portfolio.get("market_value"),
+            "risk_score": portfolio.get("risk_score"),
+            "max_position_weight": portfolio.get("max_position_weight"),
+            "high_risk_weight": portfolio.get("high_risk_weight"),
+            "sector_exposure": portfolio.get("sector_exposure", {}),
+            "correlation": portfolio.get("correlation", {}),
+            "suggestion": portfolio_suggestion,
+            "reasons": portfolio.get("reasons", []),
+        },
+        "positions": [
+            compact_position_advice(item)
+            for item in report.get("positions", [])
+        ],
+    }
+
+
+def get_advisor_summary(refresh=False):
+    report = build_advisor_report(force_sync=False) if refresh else load_latest_report()
+    if not report.get("ok"):
+        report = build_advisor_report(force_sync=False)
+    return compact_report(report)
+
+
 def get_symbol_advice(code, refresh=False):
     code = normalize_symbol(code)
     report = build_advisor_report(force_sync=False) if refresh else load_latest_report()
@@ -1302,6 +1366,7 @@ def build_candidate_advice(code, force_sync=False):
         "updated_at": utc_now_iso(),
         "code": code,
         "signal": signal,
+        "should_notify": signal == "buy_watch",
         "observation_window_days": 5,
         "advice": advice,
     }
@@ -1327,6 +1392,20 @@ def add_watch_symbol(code, note="", force_sync=False):
     symbols[code] = item
     save_watchlist(payload)
     advice = build_candidate_advice(code, force_sync=force_sync)
+    if advice.get("should_notify"):
+        alert_id = f"{code}:{advice.get('updated_at')}:buy_watch"
+        item["last_alert"] = {
+            "id": alert_id,
+            "code": code,
+            "signal": advice.get("signal"),
+            "created_at": advice.get("updated_at"),
+            "suggestion": advice.get("advice", {}).get("suggestion"),
+            "reasons": advice.get("advice", {}).get("reasons", [])[:5],
+            "technical_score": advice.get("advice", {}).get("technical_score"),
+            "risk_score": advice.get("advice", {}).get("risk_score"),
+            "acknowledged": False,
+        }
+        save_watchlist(payload)
     return {"ok": True, "watch": item, "analysis": advice}
 
 
@@ -1359,18 +1438,36 @@ def refresh_watchlist(force_sync=False):
     analyses = []
     for code in active_codes:
         analysis = build_candidate_advice(code, force_sync=force_sync)
+        alert_id = None
+        if analysis.get("should_notify"):
+            alert_id = f"{code}:{analysis.get('updated_at')}:buy_watch"
         observations = symbols[code].setdefault("observations", [])
         observations.append({
             "recorded_at": analysis.get("updated_at", utc_now_iso()),
             "signal": analysis.get("signal"),
+            "should_notify": analysis.get("should_notify", False),
+            "alert_id": alert_id,
             "technical_score": analysis.get("advice", {}).get("technical_score"),
             "risk_score": analysis.get("advice", {}).get("risk_score"),
             "action": analysis.get("advice", {}).get("action"),
             "suggestion": analysis.get("advice", {}).get("suggestion"),
+            "reasons": analysis.get("advice", {}).get("reasons", [])[:5],
         })
         symbols[code]["observations"] = observations[-30:]
         symbols[code]["last_signal"] = analysis.get("signal")
         symbols[code]["last_analysis_at"] = analysis.get("updated_at")
+        if alert_id:
+            symbols[code]["last_alert"] = {
+                "id": alert_id,
+                "code": code,
+                "signal": analysis.get("signal"),
+                "created_at": analysis.get("updated_at"),
+                "suggestion": analysis.get("advice", {}).get("suggestion"),
+                "reasons": analysis.get("advice", {}).get("reasons", [])[:5],
+                "technical_score": analysis.get("advice", {}).get("technical_score"),
+                "risk_score": analysis.get("advice", {}).get("risk_score"),
+                "acknowledged": False,
+            }
         analyses.append(analysis)
     save_watchlist(payload)
     return {
@@ -1379,4 +1476,47 @@ def refresh_watchlist(force_sync=False):
         "count": len(analyses),
         "watchlist": payload,
         "analyses": analyses,
+    }
+
+
+def get_watch_alerts(include_acknowledged=False):
+    payload = load_watchlist()
+    alerts = []
+    for code, item in payload.get("symbols", {}).items():
+        if item.get("status", "active") != "active":
+            continue
+        alert = item.get("last_alert")
+        if not alert:
+            continue
+        if alert.get("acknowledged") and not include_acknowledged:
+            continue
+        alerts.append(alert)
+    alerts.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+    return {
+        "ok": True,
+        "updated_at": payload.get("updated_at"),
+        "count": len(alerts),
+        "alerts": alerts,
+    }
+
+
+def acknowledge_watch_alert(symbol=None, alert_id=None):
+    payload = load_watchlist()
+    changed = 0
+    for code, item in payload.get("symbols", {}).items():
+        if symbol and code != normalize_symbol(symbol):
+            continue
+        alert = item.get("last_alert")
+        if not alert:
+            continue
+        if alert_id and alert.get("id") != alert_id:
+            continue
+        alert["acknowledged"] = True
+        alert["acknowledged_at"] = utc_now_iso()
+        changed += 1
+    if changed:
+        save_watchlist(payload)
+    return {
+        "ok": True,
+        "acknowledged": changed,
     }

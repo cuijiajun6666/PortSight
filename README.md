@@ -191,11 +191,14 @@ Advisor endpoints:
 
 ```bash
 curl http://127.0.0.1:8000/advisor/suggestions
+curl "http://127.0.0.1:8000/advisor/summary"
 curl "http://127.0.0.1:8000/advisor/suggestions?refresh=true"
 curl "http://127.0.0.1:8000/advisor/symbol?symbol=US.SIDU"
 curl "http://127.0.0.1:8000/advisor/candidate?symbol=US.SIDU&refresh=true"
 curl -X POST "http://127.0.0.1:8000/advisor/watchlist?symbol=US.SIDU&note=SpaceX%20sentiment"
 curl "http://127.0.0.1:8000/advisor/watchlist?refresh=true"
+curl "http://127.0.0.1:8000/advisor/alerts"
+curl -X POST "http://127.0.0.1:8000/advisor/alerts/ack?symbol=US.SIDU"
 curl -X PATCH "http://127.0.0.1:8000/advisor/watchlist?symbol=US.SIDU&status=paused"
 curl -X PATCH "http://127.0.0.1:8000/advisor/watchlist?symbol=US.SIDU&delete=true"
 curl -X POST "http://127.0.0.1:8000/advisor/sync_klines"
@@ -206,7 +209,7 @@ curl -X POST "http://127.0.0.1:8000/advisor/training_samples/update_targets"
 curl "http://127.0.0.1:8000/advisor/training_samples?limit=50"
 ```
 
-`/advisor/candidate` analyzes a symbol even if it is not in current positions. `/advisor/watchlist` keeps a short observation pool for buy candidates: it gives an immediate historical-K-line judgment, then records daily observations. Pausing a symbol keeps its cached history; deleting removes it from the active watchlist.
+`/advisor/summary` is the frontend-friendly compact response for portfolio advice and per-position advice. `/advisor/candidate` analyzes a symbol even if it is not in current positions and does not save it. `/advisor/watchlist` keeps a short observation pool for buy candidates: it gives an immediate historical-K-line judgment, then records daily observations. `/advisor/alerts` returns active buy-watch alerts when a watched symbol reaches a buy-candidate signal. Pausing a symbol keeps its cached history; deleting removes it from the active watchlist.
 
 The backend also runs an advisor refresh job on weekdays at `16:25 America/New_York`, after the market close snapshot. This job refreshes current-position advice, updates active watchlist observations, records training samples, and backfills expired prediction targets.
 
