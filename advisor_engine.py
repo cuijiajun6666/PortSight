@@ -20,6 +20,8 @@ from advisor_profile import (
     get_financials,
     get_operational_efficiency,
     get_owner_plates,
+    get_shareholders_changes,
+    get_shareholders_overviews,
     get_valuations,
     sync_capital_distributions,
     sync_capital_flows,
@@ -29,6 +31,8 @@ from advisor_profile import (
     sync_financials,
     sync_operational_efficiency,
     sync_owner_plates,
+    sync_shareholders_changes,
+    sync_shareholders_overviews,
     sync_short_interests,
     sync_valuations,
 )
@@ -593,6 +597,53 @@ def short_risk_adjustment(daily_short_volume, short_interest):
     return adjustment, reasons
 
 
+def shareholders_overview_summary(shareholders_overview):
+    return (shareholders_overview or {}).get("summary", {}) or {}
+
+
+def shareholders_changes_summary(shareholders_changes):
+    return (shareholders_changes or {}).get("summary", {}) or {}
+
+
+def shareholders_risk_adjustment(shareholders_overview, shareholders_changes):
+    overview = shareholders_overview_summary(shareholders_overview)
+    changes = shareholders_changes_summary(shareholders_changes)
+    adjustment = 0
+    reasons = []
+
+    top_holder_pct = safe_float(overview.get("top_holder_pct"), None)
+    top5_pct = safe_float(overview.get("top5_holder_pct"), None)
+    net_change = safe_float(changes.get("net_share_ratio_change"), None)
+    negative_count = safe_float(changes.get("negative_change_count"), None)
+    positive_count = safe_float(changes.get("positive_change_count"), None)
+    largest_sell = safe_float(changes.get("largest_sell_share_ratio_change"), None)
+
+    if top_holder_pct is not None and top_holder_pct >= 40:
+        adjustment += 3
+        reasons.append("第一大股东持股占比较高，治理和流动性集中风险需关注")
+    if top5_pct is not None and top5_pct >= 65:
+        adjustment += 3
+        reasons.append("前五大股东持股集中度偏高")
+
+    if net_change is not None:
+        if net_change >= 0.3:
+            adjustment -= 3
+            reasons.append("近期主要股东整体增持")
+        elif net_change <= -0.3:
+            adjustment += 4
+            reasons.append("近期主要股东整体减持")
+
+    if largest_sell is not None and largest_sell <= -0.5:
+        adjustment += 3
+        reasons.append("单一主要股东减持幅度较大")
+
+    if negative_count is not None and positive_count is not None and negative_count > positive_count * 1.5:
+        adjustment += 2
+        reasons.append("减持记录数量明显多于增持记录")
+
+    return adjustment, reasons
+
+
 def score_position(
     position,
     daily_frame,
@@ -609,6 +660,8 @@ def score_position(
     capital_distribution=None,
     daily_short_volume=None,
     short_interest=None,
+    shareholders_overview=None,
+    shareholders_changes=None,
 ):
     code = position.get("code", "")
     plates = plates or []
@@ -683,6 +736,10 @@ def score_position(
     efficiency_addon, efficiency_reasons = operational_efficiency_risk_adjustment(operational_efficiency)
     capital_addon, capital_reasons = capital_risk_adjustment(capital_flow, capital_distribution)
     short_addon, short_reasons = short_risk_adjustment(daily_short_volume, short_interest)
+    shareholders_addon, shareholders_reasons = shareholders_risk_adjustment(
+        shareholders_overview,
+        shareholders_changes,
+    )
     risk_score = (
         volatility_risk * weights["volatility"]
         + drawdown_risk * weights["drawdown"]
@@ -696,6 +753,7 @@ def score_position(
         + efficiency_addon
         + capital_addon
         + short_addon
+        + shareholders_addon
         + max(0, 50 - trend_score) * weights["trend"]
     )
     risk_score = round(max(0, min(100, risk_score)), 1)
@@ -741,6 +799,7 @@ def score_position(
     reasons.extend(efficiency_reasons)
     reasons.extend(capital_reasons)
     reasons.extend(short_reasons)
+    reasons.extend(shareholders_reasons)
 
     return {
         "code": code,
@@ -761,6 +820,8 @@ def score_position(
             "capital_distribution": capital_distribution_summary(capital_distribution),
             "daily_short_volume": daily_short_volume_summary(daily_short_volume),
             "short_interest": short_interest_summary(short_interest),
+            "shareholders_overview": shareholders_overview_summary(shareholders_overview),
+            "shareholders_changes": shareholders_changes_summary(shareholders_changes),
         },
         "weight": round(weight, 4),
         "market_val": market_val,
@@ -873,6 +934,8 @@ def sync_advisor_profiles(force=False):
     capital_distribution_result = sync_capital_distributions(codes, force=force)
     daily_short_volume_result = sync_daily_short_volumes(codes, force=force)
     short_interest_result = sync_short_interests(codes, force=force)
+    shareholders_overview_result = sync_shareholders_overviews(codes, force=force)
+    shareholders_changes_result = sync_shareholders_changes(codes, force=force)
     return {
         "ok": (
             plate_result.get("ok")
@@ -885,6 +948,8 @@ def sync_advisor_profiles(force=False):
             and capital_distribution_result.get("ok")
             and daily_short_volume_result.get("ok")
             and short_interest_result.get("ok")
+            and shareholders_overview_result.get("ok")
+            and shareholders_changes_result.get("ok")
         ),
         "count": (
             plate_result.get("count", 0)
@@ -897,6 +962,8 @@ def sync_advisor_profiles(force=False):
             + capital_distribution_result.get("count", 0)
             + daily_short_volume_result.get("count", 0)
             + short_interest_result.get("count", 0)
+            + shareholders_overview_result.get("count", 0)
+            + shareholders_changes_result.get("count", 0)
         ),
         "plates": plate_result,
         "valuations": valuation_result,
@@ -908,6 +975,8 @@ def sync_advisor_profiles(force=False):
         "capital_distributions": capital_distribution_result,
         "daily_short_volumes": daily_short_volume_result,
         "short_interests": short_interest_result,
+        "shareholders_overviews": shareholders_overview_result,
+        "shareholders_changes": shareholders_changes_result,
     }
 
 
@@ -934,6 +1003,8 @@ def build_advisor_report(force_sync=False):
     capital_distributions = get_capital_distributions(codes)
     daily_short_volumes = get_daily_short_volumes(codes)
     short_interests = get_short_interests(codes)
+    shareholders_overviews = get_shareholders_overviews(codes)
+    shareholders_changes = get_shareholders_changes(codes)
     if force_sync:
         for position in positions:
             code = position.get("code")
@@ -949,6 +1020,8 @@ def build_advisor_report(force_sync=False):
         capital_distributions = get_capital_distributions(codes, force=True)
         daily_short_volumes = get_daily_short_volumes(codes, force=True)
         short_interests = get_short_interests(codes, force=True)
+        shareholders_overviews = get_shareholders_overviews(codes, force=True)
+        shareholders_changes = get_shareholders_changes(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
     reports = []
@@ -973,6 +1046,8 @@ def build_advisor_report(force_sync=False):
             capital_distribution=capital_distributions.get(code),
             daily_short_volume=daily_short_volumes.get(code),
             short_interest=short_interests.get(code),
+            shareholders_overview=shareholders_overviews.get(code),
+            shareholders_changes=shareholders_changes.get(code),
         ))
 
     exposure = portfolio_exposure(reports)

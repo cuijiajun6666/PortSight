@@ -23,3 +23,5 @@ data/*
 !data/advisor_capital_distribution.json
 !data/advisor_daily_short_volume.json
 !data/advisor_short_interest.json
+!data/advisor_shareholders_overview.json
+!data/advisor_shareholders_changes.json

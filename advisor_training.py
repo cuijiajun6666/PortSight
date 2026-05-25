@@ -182,6 +182,22 @@ def short_features(position):
     }
 
 
+def shareholders_features(position):
+    overview = position.get("profile", {}).get("shareholders_overview") or {}
+    changes = position.get("profile", {}).get("shareholders_changes") or {}
+    return {
+        "shareholders_top_holder_pct": safe_float(overview.get("top_holder_pct"), None),
+        "shareholders_top5_holder_pct": safe_float(overview.get("top5_holder_pct"), None),
+        "shareholders_top10_holder_pct": safe_float(overview.get("top10_holder_pct"), None),
+        "shareholders_change_count": safe_float(changes.get("change_count"), None),
+        "shareholders_positive_change_count": safe_float(changes.get("positive_change_count"), None),
+        "shareholders_negative_change_count": safe_float(changes.get("negative_change_count"), None),
+        "shareholders_net_share_ratio_change": safe_float(changes.get("net_share_ratio_change"), None),
+        "shareholders_largest_buy_share_ratio_change": safe_float(changes.get("largest_buy_share_ratio_change"), None),
+        "shareholders_largest_sell_share_ratio_change": safe_float(changes.get("largest_sell_share_ratio_change"), None),
+    }
+
+
 def build_feature_row(report, position):
     daily = position.get("signals", {}).get("daily", {})
     weekly = position.get("signals", {}).get("weekly", {})
@@ -217,6 +233,7 @@ def build_feature_row(report, position):
         **operational_efficiency_features(position),
         **capital_features(position),
         **short_features(position),
+        **shareholders_features(position),
     }
 
     signals = [

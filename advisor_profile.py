@@ -19,6 +19,8 @@ CAPITAL_FLOW_FILE = DATA_DIR / "advisor_capital_flow.json"
 CAPITAL_DISTRIBUTION_FILE = DATA_DIR / "advisor_capital_distribution.json"
 DAILY_SHORT_VOLUME_FILE = DATA_DIR / "advisor_daily_short_volume.json"
 SHORT_INTEREST_FILE = DATA_DIR / "advisor_short_interest.json"
+SHAREHOLDERS_OVERVIEW_FILE = DATA_DIR / "advisor_shareholders_overview.json"
+SHAREHOLDERS_CHANGES_FILE = DATA_DIR / "advisor_shareholders_changes.json"
 OWNER_PLATE_REFRESH_SECONDS = int(os.getenv("ADVISOR_OWNER_PLATE_REFRESH_SECONDS", "86400"))
 VALUATION_REFRESH_SECONDS = int(os.getenv("ADVISOR_VALUATION_REFRESH_SECONDS", "86400"))
 FINANCIALS_REFRESH_SECONDS = int(os.getenv("ADVISOR_FINANCIALS_REFRESH_SECONDS", "86400"))
@@ -29,6 +31,8 @@ CAPITAL_FLOW_REFRESH_SECONDS = int(os.getenv("ADVISOR_CAPITAL_FLOW_REFRESH_SECON
 CAPITAL_DISTRIBUTION_REFRESH_SECONDS = int(os.getenv("ADVISOR_CAPITAL_DISTRIBUTION_REFRESH_SECONDS", "86400"))
 DAILY_SHORT_VOLUME_REFRESH_SECONDS = int(os.getenv("ADVISOR_DAILY_SHORT_VOLUME_REFRESH_SECONDS", "86400"))
 SHORT_INTEREST_REFRESH_SECONDS = int(os.getenv("ADVISOR_SHORT_INTEREST_REFRESH_SECONDS", "86400"))
+SHAREHOLDERS_OVERVIEW_REFRESH_SECONDS = int(os.getenv("ADVISOR_SHAREHOLDERS_OVERVIEW_REFRESH_SECONDS", "86400"))
+SHAREHOLDERS_CHANGES_REFRESH_SECONDS = int(os.getenv("ADVISOR_SHAREHOLDERS_CHANGES_REFRESH_SECONDS", "86400"))
 OWNER_PLATE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OWNER_PLATE_REQUEST_INTERVAL_SECONDS", "3.2"))
 VALUATION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_VALUATION_REQUEST_INTERVAL_SECONDS", "1.1"))
 FINANCIALS_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_FINANCIALS_REQUEST_INTERVAL_SECONDS", "1.1"))
@@ -39,6 +43,8 @@ CAPITAL_FLOW_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_CAPITAL_FLOW_RE
 CAPITAL_DISTRIBUTION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_CAPITAL_DISTRIBUTION_REQUEST_INTERVAL_SECONDS", "1.1"))
 DAILY_SHORT_VOLUME_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_DAILY_SHORT_VOLUME_REQUEST_INTERVAL_SECONDS", "1.1"))
 SHORT_INTEREST_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_SHORT_INTEREST_REQUEST_INTERVAL_SECONDS", "1.1"))
+SHAREHOLDERS_OVERVIEW_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_SHAREHOLDERS_OVERVIEW_REQUEST_INTERVAL_SECONDS", "1.1"))
+SHAREHOLDERS_CHANGES_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_SHAREHOLDERS_CHANGES_REQUEST_INTERVAL_SECONDS", "1.1"))
 OWNER_PLATE_BATCH_SIZE = 200
 FINANCIALS_REPORT_COUNT = int(os.getenv("ADVISOR_FINANCIALS_REPORT_COUNT", "6"))
 EARNINGS_MOVE_PERIOD_COUNT = int(os.getenv("ADVISOR_EARNINGS_MOVE_PERIOD_COUNT", "8"))
@@ -47,6 +53,7 @@ OPERATIONAL_EFFICIENCY_COUNT = int(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_COU
 CAPITAL_FLOW_MAX_ROWS = int(os.getenv("ADVISOR_CAPITAL_FLOW_MAX_ROWS", "260"))
 CAPITAL_FLOW_PERIOD = os.getenv("ADVISOR_CAPITAL_FLOW_PERIOD", "DAY")
 SHORT_DATA_MAX_ROWS = int(os.getenv("ADVISOR_SHORT_DATA_MAX_ROWS", "120"))
+SHAREHOLDERS_CHANGES_COUNT = int(os.getenv("ADVISOR_SHAREHOLDERS_CHANGES_COUNT", "100"))
 
 _owner_plate_lock = threading.RLock()
 _valuation_lock = threading.RLock()
@@ -58,6 +65,8 @@ _capital_flow_lock = threading.RLock()
 _capital_distribution_lock = threading.RLock()
 _daily_short_volume_lock = threading.RLock()
 _short_interest_lock = threading.RLock()
+_shareholders_overview_lock = threading.RLock()
+_shareholders_changes_lock = threading.RLock()
 _rate_limit_lock = threading.RLock()
 _last_owner_plate_request_at = 0.0
 _last_valuation_request_at = 0.0
@@ -69,6 +78,8 @@ _last_capital_flow_request_at = 0.0
 _last_capital_distribution_request_at = 0.0
 _last_daily_short_volume_request_at = 0.0
 _last_short_interest_request_at = 0.0
+_last_shareholders_overview_request_at = 0.0
+_last_shareholders_changes_request_at = 0.0
 
 
 def utc_now_iso():
@@ -185,6 +196,24 @@ def save_short_interest_cache(cache):
     atomic_write_json(SHORT_INTEREST_FILE, cache)
 
 
+def load_shareholders_overview_cache():
+    return read_json(SHAREHOLDERS_OVERVIEW_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_shareholders_overview_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(SHAREHOLDERS_OVERVIEW_FILE, cache)
+
+
+def load_shareholders_changes_cache():
+    return read_json(SHAREHOLDERS_CHANGES_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_shareholders_changes_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(SHAREHOLDERS_CHANGES_FILE, cache)
+
+
 def cache_is_fresh(symbol_payload, ttl_seconds):
     fetched_at = symbol_payload.get("fetched_at")
     if not fetched_at:
@@ -294,6 +323,26 @@ def wait_for_short_interest_rate_limit():
         if wait_seconds > 0:
             time.sleep(wait_seconds)
         _last_short_interest_request_at = time.monotonic()
+
+
+def wait_for_shareholders_overview_rate_limit():
+    global _last_shareholders_overview_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = SHAREHOLDERS_OVERVIEW_REQUEST_INTERVAL_SECONDS - (now - _last_shareholders_overview_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_shareholders_overview_request_at = time.monotonic()
+
+
+def wait_for_shareholders_changes_rate_limit():
+    global _last_shareholders_changes_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = SHAREHOLDERS_CHANGES_REQUEST_INTERVAL_SECONDS - (now - _last_shareholders_changes_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_shareholders_changes_request_at = time.monotonic()
 
 
 def json_value(value):
@@ -1379,5 +1428,208 @@ def get_short_interests(codes, force=False):
     symbols = cache.get("symbols", {})
     return {
         code: symbols.get(code, {}).get("short_interest")
+        for code in codes
+    }
+
+
+def to_float(value, default=0.0):
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def summarize_shareholders_overview(data):
+    main_holder = data.get("main_holder")
+    holder_type = data.get("holder_type")
+    holding_period = data.get("holding_period")
+    main_records = frame_to_records(main_holder) if main_holder is not None else []
+    type_records = frame_to_records(holder_type) if holder_type is not None else []
+    period_records = frame_to_records(holding_period) if holding_period is not None else []
+
+    non_other = [
+        item for item in main_records
+        if str(item.get("name", "")).lower() not in ("其他", "other")
+    ]
+    top_holder = non_other[0] if non_other else {}
+    top5_pct = sum(to_float(item.get("holder_pct")) for item in non_other[:5])
+    top10_pct = sum(to_float(item.get("holder_pct")) for item in non_other[:10])
+
+    return {
+        "summary": {
+            "latest_static_date": main_records[0].get("static_date_str") if main_records else None,
+            "top_holder_name": top_holder.get("name"),
+            "top_holder_pct": top_holder.get("holder_pct"),
+            "top5_holder_pct": top5_pct,
+            "top10_holder_pct": top10_pct,
+            "main_holder_count": len(main_records),
+            "holder_type_count": len(type_records),
+            "latest_period": period_records[0].get("period_text") if period_records else None,
+            "latest_period_id": period_records[0].get("period_id") if period_records else None,
+        },
+        "main_holder": main_records,
+        "holder_type": type_records,
+        "holding_period": period_records,
+    }
+
+
+def request_shareholders_overview(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_shareholders_overview_rate_limit()
+        ret, data = quote_ctx.get_shareholders_overview(code)
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_shareholders_overview failed for {code}: {data}")
+    return summarize_shareholders_overview(data)
+
+
+def sync_shareholders_overviews(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _shareholders_overview_lock:
+        cache = load_shareholders_overview_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], SHAREHOLDERS_OVERVIEW_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "shareholders_overview": request_shareholders_overview(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "shareholders_overview": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_shareholders_overview_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("shareholders_overview") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_shareholders_overviews(codes, force=False):
+    sync_shareholders_overviews(codes, force=force)
+    cache = load_shareholders_overview_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("shareholders_overview")
+        for code in codes
+    }
+
+
+def summarize_shareholders_changes(data):
+    records = frame_to_records(data, max_rows=SHAREHOLDERS_CHANGES_COUNT)
+    positive = [row for row in records if to_float(row.get("share_ratio_change")) > 0]
+    negative = [row for row in records if to_float(row.get("share_ratio_change")) < 0]
+    total_positive_change = sum(to_float(row.get("share_ratio_change")) for row in positive)
+    total_negative_change = sum(to_float(row.get("share_ratio_change")) for row in negative)
+    largest_buy = max(records, key=lambda row: to_float(row.get("share_ratio_change")), default={})
+    largest_sell = min(records, key=lambda row: to_float(row.get("share_ratio_change")), default={})
+    return {
+        "summary": {
+            "latest_period": records[0].get("period_text") if records else None,
+            "latest_holding_date": records[0].get("holding_date_str") if records else None,
+            "change_count": len(records),
+            "positive_change_count": len(positive),
+            "negative_change_count": len(negative),
+            "total_positive_share_ratio_change": total_positive_change,
+            "total_negative_share_ratio_change": total_negative_change,
+            "net_share_ratio_change": total_positive_change + total_negative_change,
+            "largest_buy_holder": largest_buy.get("name"),
+            "largest_buy_share_ratio_change": largest_buy.get("share_ratio_change"),
+            "largest_sell_holder": largest_sell.get("name"),
+            "largest_sell_share_ratio_change": largest_sell.get("share_ratio_change"),
+        },
+        "rows": records,
+    }
+
+
+def request_shareholders_changes(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_shareholders_changes_rate_limit()
+        ret, data = quote_ctx.get_shareholders_holding_changes(
+            code,
+            num=SHAREHOLDERS_CHANGES_COUNT,
+        )
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_shareholders_holding_changes failed for {code}: {data}")
+    return summarize_shareholders_changes(data)
+
+
+def sync_shareholders_changes(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _shareholders_changes_lock:
+        cache = load_shareholders_changes_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], SHAREHOLDERS_CHANGES_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "shareholders_changes": request_shareholders_changes(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "shareholders_changes": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_shareholders_changes_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("shareholders_changes") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_shareholders_changes(codes, force=False):
+    sync_shareholders_changes(codes, force=force)
+    cache = load_shareholders_changes_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("shareholders_changes")
         for code in codes
     }
