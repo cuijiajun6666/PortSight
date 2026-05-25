@@ -85,6 +85,29 @@ def valuation_features(position):
     }
 
 
+def financial_features(position):
+    financials = position.get("profile", {}).get("financials") or {}
+    return {
+        "financial_latest_period": financials.get("latest_period"),
+        "financial_latest_date": financials.get("latest_date"),
+        "revenue": safe_float(financials.get("revenue"), None),
+        "revenue_yoy": safe_float(financials.get("revenue_yoy"), None),
+        "revenue_qoq": safe_float(financials.get("revenue_qoq"), None),
+        "gross_profit": safe_float(financials.get("gross_profit"), None),
+        "gross_profit_yoy": safe_float(financials.get("gross_profit_yoy"), None),
+        "operating_profit": safe_float(financials.get("operating_profit"), None),
+        "operating_profit_yoy": safe_float(financials.get("operating_profit_yoy"), None),
+        "net_income": safe_float(financials.get("net_income"), None),
+        "net_income_yoy": safe_float(financials.get("net_income_yoy"), None),
+        "eps": safe_float(financials.get("eps"), None),
+        "eps_yoy": safe_float(financials.get("eps_yoy"), None),
+        "cash": safe_float(financials.get("cash"), None),
+        "total_assets": safe_float(financials.get("total_assets"), None),
+        "total_liabilities": safe_float(financials.get("total_liabilities"), None),
+        "operating_cash_flow": safe_float(financials.get("operating_cash_flow"), None),
+    }
+
+
 def build_feature_row(report, position):
     daily = position.get("signals", {}).get("daily", {})
     weekly = position.get("signals", {}).get("weekly", {})
@@ -114,6 +137,7 @@ def build_feature_row(report, position):
         "expected_volatility_30d": safe_float(position.get("prediction", {}).get("expected_volatility_30d")),
         "drawdown_from_high": safe_float(position.get("prediction", {}).get("drawdown_from_high")),
         **valuation_features(position),
+        **financial_features(position),
     }
 
     signals = [
@@ -294,4 +318,3 @@ def get_training_samples(limit=200, symbol=None):
         "count": len(samples),
         "samples": samples,
     }
-

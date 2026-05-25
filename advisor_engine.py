@@ -12,8 +12,10 @@ from advisor_kline_cache import (
     sync_daily_klines,
 )
 from advisor_profile import (
+    get_financials,
     get_owner_plates,
     get_valuations,
+    sync_financials,
     sync_owner_plates,
     sync_valuations,
 )
@@ -272,7 +274,98 @@ def valuation_risk_adjustment(valuation):
     return adjustment, reasons
 
 
-def score_position(position, daily_frame, portfolio_value, weights, meta, plates=None, valuation=None):
+FINANCIAL_FIELD_KEYWORDS = {
+    "revenue": ["营业总收入", "营业额", "total revenue", "revenue"],
+    "gross_profit": ["毛利", "gross profit"],
+    "operating_profit": ["营业利润", "经营利润", "operating profit", "operating income"],
+    "net_income": ["归属母公司净利润", "净利润", "net income", "net profit"],
+    "eps": ["基本每股收益", "稀释每股收益", "eps", "earnings per share"],
+    "cash": ["现金", "cash"],
+    "total_assets": ["总资产", "total assets"],
+    "total_liabilities": ["总负债", "total liabilities"],
+    "operating_cash_flow": ["经营现金流", "operating cash flow"],
+}
+
+
+def find_financial_item(report, keywords):
+    for item in report.get("items", []) or []:
+        name = str(item.get("display_name") or "").lower()
+        if any(keyword.lower() in name for keyword in keywords):
+            return item
+    return None
+
+
+def financial_summary(financials):
+    if not financials:
+        return {}
+    reports = financials.get("reports", [])
+    if not reports:
+        return {}
+    latest = reports[0]
+    summary = {
+        "latest_period": latest.get("period_text"),
+        "latest_date": latest.get("date_time_str"),
+        "currency_code": latest.get("currency_code"),
+    }
+    for key, keywords in FINANCIAL_FIELD_KEYWORDS.items():
+        item = find_financial_item(latest, keywords)
+        if item:
+            summary[key] = safe_float(item.get("data"), None)
+            summary[f"{key}_yoy"] = safe_float(item.get("yoy"), None)
+            summary[f"{key}_qoq"] = safe_float(item.get("qoq"), None)
+    return summary
+
+
+def financial_risk_adjustment(financials):
+    summary = financial_summary(financials)
+    if not summary:
+        return 0, []
+
+    reasons = []
+    adjustment = 0
+    revenue_yoy = summary.get("revenue_yoy")
+    net_income_yoy = summary.get("net_income_yoy")
+    operating_profit_yoy = summary.get("operating_profit_yoy")
+    operating_cash_flow = summary.get("operating_cash_flow")
+    net_income = summary.get("net_income")
+
+    if revenue_yoy is not None:
+        if revenue_yoy < -10:
+            adjustment += 8
+            reasons.append("最近财报收入同比下滑超过10%")
+        elif revenue_yoy > 10:
+            adjustment -= 4
+            reasons.append("最近财报收入同比增长超过10%")
+
+    if net_income_yoy is not None:
+        if net_income_yoy < -20:
+            adjustment += 8
+            reasons.append("最近财报净利润同比明显下滑")
+        elif net_income_yoy > 20:
+            adjustment -= 4
+            reasons.append("最近财报净利润同比增长较强")
+
+    if operating_profit_yoy is not None and operating_profit_yoy < -20:
+        adjustment += 5
+        reasons.append("营业利润同比明显走弱")
+
+    if operating_cash_flow is not None and net_income is not None and net_income > 0 and operating_cash_flow < 0:
+        adjustment += 6
+        reasons.append("净利润为正但经营现金流为负，盈利质量需要谨慎")
+
+    return adjustment, reasons
+
+
+def score_position(
+    position,
+    daily_frame,
+    portfolio_value,
+    weights,
+    meta,
+    plates=None,
+    valuation=None,
+    financials=None,
+):
     code = position.get("code", "")
     plates = plates or []
     sector = "ETF" if position.get("is_etf") else classify_sector(code, meta, plates)
@@ -341,6 +434,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta, plates
     size_addon = 8 if size_tier == "small_cap" else 0
     volatility_addon = 10 if vol_tier == "extreme" else 5 if vol_tier == "high" else 0
     valuation_addon, valuation_reasons = valuation_risk_adjustment(valuation)
+    financial_addon, financial_reasons = financial_risk_adjustment(financials)
     risk_score = (
         volatility_risk * weights["volatility"]
         + drawdown_risk * weights["drawdown"]
@@ -349,6 +443,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta, plates
         + size_addon
         + volatility_addon
         + valuation_addon
+        + financial_addon
         + max(0, 50 - trend_score) * weights["trend"]
     )
     risk_score = round(max(0, min(100, risk_score)), 1)
@@ -389,6 +484,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta, plates
     if vol_tier in ("high", "extreme"):
         reasons.append("历史K线显示波动率偏高，仓位上限应低于普通大盘股")
     reasons.extend(valuation_reasons)
+    reasons.extend(financial_reasons)
 
     return {
         "code": code,
@@ -401,6 +497,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta, plates
             "volatility_tier": vol_tier,
             "plates": plates,
             "valuation": valuation,
+            "financials": financial_summary(financials),
         },
         "weight": round(weight, 4),
         "market_val": market_val,
@@ -505,11 +602,17 @@ def sync_advisor_profiles(force=False):
     ]
     plate_result = sync_owner_plates(codes, force=force)
     valuation_result = sync_valuations(codes, force=force)
+    financial_result = sync_financials(codes, force=force)
     return {
-        "ok": plate_result.get("ok") and valuation_result.get("ok"),
-        "count": plate_result.get("count", 0) + valuation_result.get("count", 0),
+        "ok": plate_result.get("ok") and valuation_result.get("ok") and financial_result.get("ok"),
+        "count": (
+            plate_result.get("count", 0)
+            + valuation_result.get("count", 0)
+            + financial_result.get("count", 0)
+        ),
         "plates": plate_result,
         "valuations": valuation_result,
+        "financials": financial_result,
     }
 
 
@@ -528,6 +631,7 @@ def build_advisor_report(force_sync=False):
     ]
     owner_plates = get_owner_plates(codes)
     valuations = get_valuations(codes)
+    financials = get_financials(codes)
     if force_sync:
         for position in positions:
             code = position.get("code")
@@ -535,6 +639,7 @@ def build_advisor_report(force_sync=False):
                 sync_all_period_klines(code, force=True)
         owner_plates = get_owner_plates(codes, force=True)
         valuations = get_valuations(codes, force=True)
+        financials = get_financials(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
     reports = []
@@ -551,6 +656,7 @@ def build_advisor_report(force_sync=False):
             meta,
             plates=owner_plates.get(code, []),
             valuation=valuations.get(code),
+            financials=financials.get(code),
         ))
 
     exposure = portfolio_exposure(reports)

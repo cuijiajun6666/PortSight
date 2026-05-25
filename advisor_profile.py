@@ -11,17 +11,23 @@ from config import DATA_DIR, HOST, PORT
 
 OWNER_PLATE_FILE = DATA_DIR / "advisor_owner_plates.json"
 VALUATION_FILE = DATA_DIR / "advisor_valuations.json"
+FINANCIALS_FILE = DATA_DIR / "advisor_financials.json"
 OWNER_PLATE_REFRESH_SECONDS = int(os.getenv("ADVISOR_OWNER_PLATE_REFRESH_SECONDS", "86400"))
 VALUATION_REFRESH_SECONDS = int(os.getenv("ADVISOR_VALUATION_REFRESH_SECONDS", "86400"))
+FINANCIALS_REFRESH_SECONDS = int(os.getenv("ADVISOR_FINANCIALS_REFRESH_SECONDS", "86400"))
 OWNER_PLATE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OWNER_PLATE_REQUEST_INTERVAL_SECONDS", "3.2"))
 VALUATION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_VALUATION_REQUEST_INTERVAL_SECONDS", "1.1"))
+FINANCIALS_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_FINANCIALS_REQUEST_INTERVAL_SECONDS", "1.1"))
 OWNER_PLATE_BATCH_SIZE = 200
+FINANCIALS_REPORT_COUNT = int(os.getenv("ADVISOR_FINANCIALS_REPORT_COUNT", "6"))
 
 _owner_plate_lock = threading.RLock()
 _valuation_lock = threading.RLock()
+_financials_lock = threading.RLock()
 _rate_limit_lock = threading.RLock()
 _last_owner_plate_request_at = 0.0
 _last_valuation_request_at = 0.0
+_last_financials_request_at = 0.0
 
 
 def utc_now_iso():
@@ -66,6 +72,15 @@ def save_valuation_cache(cache):
     atomic_write_json(VALUATION_FILE, cache)
 
 
+def load_financials_cache():
+    return read_json(FINANCIALS_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_financials_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(FINANCIALS_FILE, cache)
+
+
 def cache_is_fresh(symbol_payload, ttl_seconds):
     fetched_at = symbol_payload.get("fetched_at")
     if not fetched_at:
@@ -95,6 +110,16 @@ def wait_for_valuation_rate_limit():
         if wait_seconds > 0:
             time.sleep(wait_seconds)
         _last_valuation_request_at = time.monotonic()
+
+
+def wait_for_financials_rate_limit():
+    global _last_financials_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = FINANCIALS_REQUEST_INTERVAL_SECONDS - (now - _last_financials_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_financials_request_at = time.monotonic()
 
 
 def json_value(value):
@@ -299,5 +324,117 @@ def get_valuations(codes, force=False):
     symbols = cache.get("symbols", {})
     return {
         code: symbols.get(code, {}).get("valuation")
+        for code in codes
+    }
+
+
+def compact_financial_report(report):
+    items = []
+    for item in report.get("item_list", []) or []:
+        items.append({
+            "field_id": json_value(item.get("field_id")),
+            "display_name": json_value(item.get("display_name")),
+            "data": json_value(item.get("data")),
+            "yoy": json_value(item.get("yoy")),
+            "qoq": json_value(item.get("qoq")),
+        })
+    return {
+        "date_time": json_value(report.get("date_time")),
+        "date_time_str": json_value(report.get("date_time_str")),
+        "fiscal_year": json_value(report.get("fiscal_year")),
+        "financial_type": json_value(report.get("financial_type")),
+        "period_text": json_value(report.get("period_text")),
+        "currency_info": json_value(report.get("currency_info")),
+        "currency_code": json_value(report.get("currency_code")),
+        "accounting_standards": json_value(report.get("accounting_standards")),
+        "auditor_report": json_value(report.get("auditor_report")),
+        "items": items,
+    }
+
+
+def summarize_financials(data):
+    reports = data.get("report_list", []) or []
+    structure = data.get("structure_list", []) or []
+    return {
+        "structure": [
+            {
+                "field_id": json_value(item.get("field_id")),
+                "display_name": json_value(item.get("display_name")),
+            }
+            for item in structure
+        ],
+        "reports": [
+            compact_financial_report(report)
+            for report in reports[:FINANCIALS_REPORT_COUNT]
+        ],
+        "next_key": json_value(data.get("next_key")),
+    }
+
+
+def request_financials(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_financials_rate_limit()
+        ret, data = quote_ctx.get_financials_statements(
+            code,
+            num=FINANCIALS_REPORT_COUNT,
+        )
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_financials_statements failed for {code}: {data}")
+    return summarize_financials(data)
+
+
+def sync_financials(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _financials_lock:
+        cache = load_financials_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], FINANCIALS_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "financials": request_financials(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "financials": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_financials_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("financials") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_financials(codes, force=False):
+    sync_financials(codes, force=force)
+    cache = load_financials_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("financials")
         for code in codes
     }
