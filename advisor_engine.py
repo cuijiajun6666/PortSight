@@ -24,6 +24,7 @@ from advisor_profile import (
     get_owner_plates,
     get_shareholders_changes,
     get_shareholders_overviews,
+    get_short_interests,
     get_valuations,
     sync_insider_holders,
     sync_insider_trades,
@@ -47,6 +48,7 @@ from routes.positions import get_positions
 ADVISOR_STATE_FILE = DATA_DIR / "advisor_state.json"
 ADVISOR_REPORT_FILE = DATA_DIR / "advisor_report.json"
 SYMBOL_META_FILE = DATA_DIR / "advisor_symbol_meta.json"
+ADVISOR_WATCHLIST_FILE = DATA_DIR / "advisor_watchlist.json"
 
 DEFAULT_WEIGHTS = {
     "trend": 0.28,
@@ -107,6 +109,27 @@ def load_symbol_meta():
     if not SYMBOL_META_FILE.exists():
         write_json(SYMBOL_META_FILE, meta)
     return meta
+
+
+def normalize_symbol(code):
+    symbol = str(code or "").strip().upper()
+    if not symbol:
+        return ""
+    if "." in symbol:
+        return symbol
+    return f"US.{symbol}"
+
+
+def load_watchlist():
+    payload = read_json(ADVISOR_WATCHLIST_FILE, {})
+    payload.setdefault("updated_at", utc_now_iso())
+    payload.setdefault("symbols", {})
+    return payload
+
+
+def save_watchlist(payload):
+    payload["updated_at"] = utc_now_iso()
+    write_json(ADVISOR_WATCHLIST_FILE, payload)
 
 
 def safe_float(value, default=0.0):
@@ -726,8 +749,14 @@ def score_position(
     market_val = safe_float(position.get("market_val"))
     weight = market_val / portfolio_value if portfolio_value > 0 else 0
     indicators = add_indicators(daily_frame)
-    weekly_source = get_period_klines(code, period="week")
-    monthly_source = get_period_klines(code, period="month")
+    try:
+        weekly_source = get_period_klines(code, period="week")
+    except Exception:
+        weekly_source = pd.DataFrame()
+    try:
+        monthly_source = get_period_klines(code, period="month")
+    except Exception:
+        monthly_source = pd.DataFrame()
     weekly = add_indicators(weekly_source if not weekly_source.empty else aggregate_period(daily_frame, "W-FRI"))
     monthly = add_indicators(monthly_source if not monthly_source.empty else aggregate_period(daily_frame, "ME"))
 
@@ -933,7 +962,10 @@ def portfolio_exposure(position_reports):
 def correlation_summary(codes):
     returns = {}
     for code in codes:
-        frame = get_daily_klines(code)
+        try:
+            frame = get_daily_klines(code)
+        except Exception:
+            continue
         if frame.empty:
             continue
         data = frame.tail(180).copy()
@@ -1102,7 +1134,10 @@ def build_advisor_report(force_sync=False):
         code = position.get("code")
         if not code:
             continue
-        frame = get_daily_klines(code)
+        try:
+            frame = get_daily_klines(code)
+        except Exception:
+            frame = pd.DataFrame()
         reports.append(score_position(
             position,
             frame,
@@ -1166,6 +1201,7 @@ def load_latest_report():
 
 
 def get_symbol_advice(code, refresh=False):
+    code = normalize_symbol(code)
     report = build_advisor_report(force_sync=False) if refresh else load_latest_report()
     if not report.get("ok"):
         report = build_advisor_report(force_sync=False)
@@ -1179,4 +1215,168 @@ def get_symbol_advice(code, refresh=False):
     return {
         "ok": False,
         "error": f"{code} is not in current positions",
+    }
+
+
+def sync_symbol_profile_set(codes, force=False):
+    clean_codes = sorted({normalize_symbol(code) for code in codes if normalize_symbol(code)})
+    return {
+        "ok": True,
+        "codes": clean_codes,
+        "owner_plates": sync_owner_plates(clean_codes, force=force),
+        "valuations": sync_valuations(clean_codes, force=force),
+        "financials": sync_financials(clean_codes, force=force),
+        "earnings": sync_earnings_moves(clean_codes, force=force),
+        "company_profiles": sync_company_profiles(clean_codes, force=force),
+        "operational_efficiency": sync_operational_efficiency(clean_codes, force=force),
+        "capital_flows": sync_capital_flows(clean_codes, force=force),
+        "capital_distributions": sync_capital_distributions(clean_codes, force=force),
+        "daily_short_volumes": sync_daily_short_volumes(clean_codes, force=force),
+        "short_interests": sync_short_interests(clean_codes, force=force),
+        "shareholders_overviews": sync_shareholders_overviews(clean_codes, force=force),
+        "shareholders_changes": sync_shareholders_changes(clean_codes, force=force),
+        "insider_trades": sync_insider_trades(clean_codes, force=force),
+        "insider_holders": sync_insider_holders(clean_codes, force=force),
+    }
+
+
+def build_candidate_advice(code, force_sync=False):
+    code = normalize_symbol(code)
+    if not code:
+        return {"ok": False, "error": "symbol is required"}
+
+    if force_sync:
+        try:
+            sync_daily_klines(code, force=True)
+        except Exception:
+            pass
+        try:
+            sync_symbol_profile_set([code], force=True)
+        except Exception:
+            pass
+
+    meta = load_symbol_meta()
+    try:
+        frame = get_daily_klines(code)
+    except Exception:
+        frame = pd.DataFrame()
+
+    owner_plates = get_owner_plates([code]).get(code, [])
+    fake_position = {
+        "code": code,
+        "name": code,
+        "market_val": 0,
+        "unrealized_pl": 0,
+        "is_etf": False,
+    }
+    advice = score_position(
+        fake_position,
+        frame,
+        0,
+        load_advisor_state()["weights"],
+        meta,
+        plates=owner_plates,
+        valuation=get_valuations([code]).get(code),
+        financials=get_financials([code]).get(code),
+        earnings=get_earnings_moves([code]).get(code),
+        company_profile=get_company_profiles([code]).get(code),
+        operational_efficiency=get_operational_efficiency([code]).get(code),
+        capital_flow=get_capital_flows([code]).get(code),
+        capital_distribution=get_capital_distributions([code]).get(code),
+        daily_short_volume=get_daily_short_volumes([code]).get(code),
+        short_interest=get_short_interests([code]).get(code),
+        shareholders_overview=get_shareholders_overviews([code]).get(code),
+        shareholders_changes=get_shareholders_changes([code]).get(code),
+        insider_trades=get_insider_trades([code]).get(code),
+        insider_holders=get_insider_holders([code]).get(code),
+    )
+    action = advice.get("action")
+    signal = "watch"
+    if action == "add_candidate" and advice.get("technical_score", 0) >= 68 and advice.get("risk_score", 100) < 55:
+        signal = "buy_watch"
+    elif action in ("trim", "reduce_or_watch"):
+        signal = "avoid_or_wait"
+
+    return {
+        "ok": True,
+        "updated_at": utc_now_iso(),
+        "code": code,
+        "signal": signal,
+        "observation_window_days": 5,
+        "advice": advice,
+    }
+
+
+def add_watch_symbol(code, note="", force_sync=False):
+    code = normalize_symbol(code)
+    if not code:
+        return {"ok": False, "error": "symbol is required"}
+    payload = load_watchlist()
+    symbols = payload.setdefault("symbols", {})
+    now = utc_now_iso()
+    item = symbols.get(code, {})
+    item.setdefault("created_at", now)
+    item.setdefault("observations", [])
+    item.update({
+        "code": code,
+        "status": "active",
+        "note": note,
+        "updated_at": now,
+        "observation_window_days": 5,
+    })
+    symbols[code] = item
+    save_watchlist(payload)
+    advice = build_candidate_advice(code, force_sync=force_sync)
+    return {"ok": True, "watch": item, "analysis": advice}
+
+
+def update_watch_symbol(code, status=None, note=None, delete=False):
+    code = normalize_symbol(code)
+    payload = load_watchlist()
+    symbols = payload.setdefault("symbols", {})
+    if code not in symbols:
+        return {"ok": False, "error": f"{code} is not in watchlist"}
+    if delete:
+        removed = symbols.pop(code)
+        save_watchlist(payload)
+        return {"ok": True, "deleted": True, "watch": removed}
+    if status:
+        symbols[code]["status"] = status
+    if note is not None:
+        symbols[code]["note"] = note
+    symbols[code]["updated_at"] = utc_now_iso()
+    save_watchlist(payload)
+    return {"ok": True, "watch": symbols[code]}
+
+
+def refresh_watchlist(force_sync=False):
+    payload = load_watchlist()
+    symbols = payload.setdefault("symbols", {})
+    active_codes = [
+        code for code, item in symbols.items()
+        if item.get("status", "active") == "active"
+    ]
+    analyses = []
+    for code in active_codes:
+        analysis = build_candidate_advice(code, force_sync=force_sync)
+        observations = symbols[code].setdefault("observations", [])
+        observations.append({
+            "recorded_at": analysis.get("updated_at", utc_now_iso()),
+            "signal": analysis.get("signal"),
+            "technical_score": analysis.get("advice", {}).get("technical_score"),
+            "risk_score": analysis.get("advice", {}).get("risk_score"),
+            "action": analysis.get("advice", {}).get("action"),
+            "suggestion": analysis.get("advice", {}).get("suggestion"),
+        })
+        symbols[code]["observations"] = observations[-30:]
+        symbols[code]["last_signal"] = analysis.get("signal")
+        symbols[code]["last_analysis_at"] = analysis.get("updated_at")
+        analyses.append(analysis)
+    save_watchlist(payload)
+    return {
+        "ok": True,
+        "updated_at": payload.get("updated_at"),
+        "count": len(analyses),
+        "watchlist": payload,
+        "analyses": analyses,
     }

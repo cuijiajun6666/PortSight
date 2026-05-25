@@ -13,7 +13,7 @@ from routes.orders import router as orders_router
 from routes.advisor import router as advisor_router
 from market_rt_data import sync_market_intraday_cache
 from deal_cache import start_deal_push_listener, stop_deal_push_listener
-from advisor_engine import build_advisor_report, sync_advisor_klines, sync_advisor_profiles
+from advisor_engine import build_advisor_report, refresh_watchlist, sync_advisor_klines, sync_advisor_profiles
 from advisor_training import record_training_samples, update_training_targets
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
@@ -78,12 +78,14 @@ def refresh_advisor_after_close():
         sync_result = sync_advisor_klines()
         profile_result = sync_advisor_profiles()
         report = build_advisor_report()
+        watch_result = refresh_watchlist()
         sample_result = record_training_samples(report)
         target_result = update_training_targets()
         print(
             "智能持仓建议已刷新: "
             f"{sync_result.get('count', 0)} K线任务, "
             f"{profile_result.get('count', 0)} 画像任务, "
+            f"{watch_result.get('count', 0)} 观察标的, "
             f"{sample_result.get('created', 0)} 新样本, "
             f"{target_result.get('resolved', 0)} 回填目标, "
             f"组合风险 {report.get('portfolio', {}).get('risk_score')}"

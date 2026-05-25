@@ -466,8 +466,24 @@ def sync_owner_plates(codes, force=False):
             batch = missing[start:start + OWNER_PLATE_BATCH_SIZE]
             if not batch:
                 continue
-            plate_map = request_owner_plates(batch)
             fetched_at = utc_now_iso()
+            try:
+                plate_map = request_owner_plates(batch)
+            except Exception as exc:
+                for code in batch:
+                    symbols[code] = {
+                        "fetched_at": fetched_at,
+                        "plates": [],
+                        "error": str(exc),
+                    }
+                    results.append({
+                        "ok": False,
+                        "code": code,
+                        "error": str(exc),
+                        "source": "moomoo",
+                    })
+                continue
+
             for code in batch:
                 symbols[code] = {
                     "fetched_at": fetched_at,
