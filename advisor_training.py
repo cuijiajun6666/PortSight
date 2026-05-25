@@ -167,6 +167,21 @@ def capital_features(position):
     }
 
 
+def short_features(position):
+    daily_short_volume = position.get("profile", {}).get("daily_short_volume") or {}
+    short_interest = position.get("profile", {}).get("short_interest") or {}
+    return {
+        "short_volume_latest_short_percent": safe_float(daily_short_volume.get("latest_short_percent"), None),
+        "short_volume_avg_short_percent_5": safe_float(daily_short_volume.get("avg_short_percent_5"), None),
+        "short_volume_avg_short_percent_20": safe_float(daily_short_volume.get("avg_short_percent_20"), None),
+        "short_volume_avg_daily_trade_ratio_20": safe_float(daily_short_volume.get("avg_daily_trade_ratio_20"), None),
+        "short_interest_shares_short": safe_float(short_interest.get("shares_short"), None),
+        "short_interest_short_percent": safe_float(short_interest.get("short_percent"), None),
+        "short_interest_days_to_cover": safe_float(short_interest.get("days_to_cover"), None),
+        "short_interest_change_vs_previous": safe_float(short_interest.get("short_change_vs_previous"), None),
+    }
+
+
 def build_feature_row(report, position):
     daily = position.get("signals", {}).get("daily", {})
     weekly = position.get("signals", {}).get("weekly", {})
@@ -201,6 +216,7 @@ def build_feature_row(report, position):
         **company_profile_features(position),
         **operational_efficiency_features(position),
         **capital_features(position),
+        **short_features(position),
     }
 
     signals = [

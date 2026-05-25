@@ -17,6 +17,8 @@ COMPANY_PROFILE_FILE = DATA_DIR / "advisor_company_profiles.json"
 OPERATIONAL_EFFICIENCY_FILE = DATA_DIR / "advisor_operational_efficiency.json"
 CAPITAL_FLOW_FILE = DATA_DIR / "advisor_capital_flow.json"
 CAPITAL_DISTRIBUTION_FILE = DATA_DIR / "advisor_capital_distribution.json"
+DAILY_SHORT_VOLUME_FILE = DATA_DIR / "advisor_daily_short_volume.json"
+SHORT_INTEREST_FILE = DATA_DIR / "advisor_short_interest.json"
 OWNER_PLATE_REFRESH_SECONDS = int(os.getenv("ADVISOR_OWNER_PLATE_REFRESH_SECONDS", "86400"))
 VALUATION_REFRESH_SECONDS = int(os.getenv("ADVISOR_VALUATION_REFRESH_SECONDS", "86400"))
 FINANCIALS_REFRESH_SECONDS = int(os.getenv("ADVISOR_FINANCIALS_REFRESH_SECONDS", "86400"))
@@ -25,6 +27,8 @@ COMPANY_PROFILE_REFRESH_SECONDS = int(os.getenv("ADVISOR_COMPANY_PROFILE_REFRESH
 OPERATIONAL_EFFICIENCY_REFRESH_SECONDS = int(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_REFRESH_SECONDS", "86400"))
 CAPITAL_FLOW_REFRESH_SECONDS = int(os.getenv("ADVISOR_CAPITAL_FLOW_REFRESH_SECONDS", "86400"))
 CAPITAL_DISTRIBUTION_REFRESH_SECONDS = int(os.getenv("ADVISOR_CAPITAL_DISTRIBUTION_REFRESH_SECONDS", "86400"))
+DAILY_SHORT_VOLUME_REFRESH_SECONDS = int(os.getenv("ADVISOR_DAILY_SHORT_VOLUME_REFRESH_SECONDS", "86400"))
+SHORT_INTEREST_REFRESH_SECONDS = int(os.getenv("ADVISOR_SHORT_INTEREST_REFRESH_SECONDS", "86400"))
 OWNER_PLATE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OWNER_PLATE_REQUEST_INTERVAL_SECONDS", "3.2"))
 VALUATION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_VALUATION_REQUEST_INTERVAL_SECONDS", "1.1"))
 FINANCIALS_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_FINANCIALS_REQUEST_INTERVAL_SECONDS", "1.1"))
@@ -33,6 +37,8 @@ COMPANY_PROFILE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_COMPANY_PROF
 OPERATIONAL_EFFICIENCY_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_REQUEST_INTERVAL_SECONDS", "1.1"))
 CAPITAL_FLOW_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_CAPITAL_FLOW_REQUEST_INTERVAL_SECONDS", "1.1"))
 CAPITAL_DISTRIBUTION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_CAPITAL_DISTRIBUTION_REQUEST_INTERVAL_SECONDS", "1.1"))
+DAILY_SHORT_VOLUME_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_DAILY_SHORT_VOLUME_REQUEST_INTERVAL_SECONDS", "1.1"))
+SHORT_INTEREST_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_SHORT_INTEREST_REQUEST_INTERVAL_SECONDS", "1.1"))
 OWNER_PLATE_BATCH_SIZE = 200
 FINANCIALS_REPORT_COUNT = int(os.getenv("ADVISOR_FINANCIALS_REPORT_COUNT", "6"))
 EARNINGS_MOVE_PERIOD_COUNT = int(os.getenv("ADVISOR_EARNINGS_MOVE_PERIOD_COUNT", "8"))
@@ -40,6 +46,7 @@ EARNINGS_HISTORY_MAX_ROWS = int(os.getenv("ADVISOR_EARNINGS_HISTORY_MAX_ROWS", "
 OPERATIONAL_EFFICIENCY_COUNT = int(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_COUNT", "10"))
 CAPITAL_FLOW_MAX_ROWS = int(os.getenv("ADVISOR_CAPITAL_FLOW_MAX_ROWS", "260"))
 CAPITAL_FLOW_PERIOD = os.getenv("ADVISOR_CAPITAL_FLOW_PERIOD", "DAY")
+SHORT_DATA_MAX_ROWS = int(os.getenv("ADVISOR_SHORT_DATA_MAX_ROWS", "120"))
 
 _owner_plate_lock = threading.RLock()
 _valuation_lock = threading.RLock()
@@ -49,6 +56,8 @@ _company_profile_lock = threading.RLock()
 _operational_efficiency_lock = threading.RLock()
 _capital_flow_lock = threading.RLock()
 _capital_distribution_lock = threading.RLock()
+_daily_short_volume_lock = threading.RLock()
+_short_interest_lock = threading.RLock()
 _rate_limit_lock = threading.RLock()
 _last_owner_plate_request_at = 0.0
 _last_valuation_request_at = 0.0
@@ -58,6 +67,8 @@ _last_company_profile_request_at = 0.0
 _last_operational_efficiency_request_at = 0.0
 _last_capital_flow_request_at = 0.0
 _last_capital_distribution_request_at = 0.0
+_last_daily_short_volume_request_at = 0.0
+_last_short_interest_request_at = 0.0
 
 
 def utc_now_iso():
@@ -156,6 +167,24 @@ def save_capital_distribution_cache(cache):
     atomic_write_json(CAPITAL_DISTRIBUTION_FILE, cache)
 
 
+def load_daily_short_volume_cache():
+    return read_json(DAILY_SHORT_VOLUME_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_daily_short_volume_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(DAILY_SHORT_VOLUME_FILE, cache)
+
+
+def load_short_interest_cache():
+    return read_json(SHORT_INTEREST_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_short_interest_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(SHORT_INTEREST_FILE, cache)
+
+
 def cache_is_fresh(symbol_payload, ttl_seconds):
     fetched_at = symbol_payload.get("fetched_at")
     if not fetched_at:
@@ -245,6 +274,26 @@ def wait_for_capital_distribution_rate_limit():
         if wait_seconds > 0:
             time.sleep(wait_seconds)
         _last_capital_distribution_request_at = time.monotonic()
+
+
+def wait_for_daily_short_volume_rate_limit():
+    global _last_daily_short_volume_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = DAILY_SHORT_VOLUME_REQUEST_INTERVAL_SECONDS - (now - _last_daily_short_volume_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_daily_short_volume_request_at = time.monotonic()
+
+
+def wait_for_short_interest_rate_limit():
+    global _last_short_interest_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = SHORT_INTEREST_REQUEST_INTERVAL_SECONDS - (now - _last_short_interest_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_short_interest_request_at = time.monotonic()
 
 
 def json_value(value):
@@ -1125,5 +1174,210 @@ def get_capital_distributions(codes, force=False):
     symbols = cache.get("symbols", {})
     return {
         code: symbols.get(code, {}).get("capital_distribution")
+        for code in codes
+    }
+
+
+def market_frame_for_code(code, us_df, hk_df):
+    if str(code).startswith("HK."):
+        return hk_df
+    if str(code).startswith("US."):
+        return us_df
+    return us_df if us_df is not None and not isinstance(us_df, str) and not us_df.empty else hk_df
+
+
+def avg_recent(records, field, count):
+    values = []
+    for row in records[:count]:
+        value = row.get(field)
+        if isinstance(value, (int, float)):
+            values.append(float(value))
+    return sum(values) / len(values) if values else None
+
+
+def summarize_daily_short_volume(data):
+    records = frame_to_records(data, max_rows=SHORT_DATA_MAX_ROWS)
+    latest = records[0] if records else {}
+    return {
+        "latest": latest,
+        "summary": {
+            "latest_date": latest.get("timestamp_str"),
+            "latest_short_percent": latest.get("short_percent"),
+            "latest_total_shares_short": latest.get("total_shares_short"),
+            "latest_short_sell_shares_traded": latest.get("short_sell_shares_traded"),
+            "latest_volume": latest.get("volume") or latest.get("shares_traded"),
+            "avg_short_percent_5": avg_recent(records, "short_percent", 5),
+            "avg_short_percent_20": avg_recent(records, "short_percent", 20),
+            "avg_daily_trade_ratio_20": avg_recent(records, "daily_trade_avg_ratio", 20),
+            "sample_count": len(records),
+        },
+        "rows": records,
+    }
+
+
+def request_daily_short_volume(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_daily_short_volume_rate_limit()
+        ret, us_df, hk_df = quote_ctx.get_daily_short_volume(
+            code,
+            num=SHORT_DATA_MAX_ROWS,
+        )
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_daily_short_volume failed for {code}: {us_df}")
+    data = market_frame_for_code(code, us_df, hk_df)
+    if data is None or isinstance(data, str):
+        raise RuntimeError(f"get_daily_short_volume returned no usable data for {code}")
+    return summarize_daily_short_volume(data)
+
+
+def sync_daily_short_volumes(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _daily_short_volume_lock:
+        cache = load_daily_short_volume_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], DAILY_SHORT_VOLUME_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "daily_short_volume": request_daily_short_volume(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "daily_short_volume": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_daily_short_volume_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("daily_short_volume") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_daily_short_volumes(codes, force=False):
+    sync_daily_short_volumes(codes, force=force)
+    cache = load_daily_short_volume_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("daily_short_volume")
+        for code in codes
+    }
+
+
+def summarize_short_interest(data):
+    records = frame_to_records(data, max_rows=SHORT_DATA_MAX_ROWS)
+    latest = records[0] if records else {}
+    previous = records[1] if len(records) > 1 else {}
+    shares_short = latest.get("shares_short") or latest.get("aggregated_short")
+    previous_shares_short = previous.get("shares_short") or previous.get("aggregated_short")
+    short_change = None
+    if isinstance(shares_short, (int, float)) and isinstance(previous_shares_short, (int, float)) and previous_shares_short:
+        short_change = shares_short / previous_shares_short - 1
+    return {
+        "latest": latest,
+        "summary": {
+            "latest_date": latest.get("timestamp_str"),
+            "shares_short": shares_short,
+            "short_percent": latest.get("short_percent") or latest.get("aggregated_short_ratio"),
+            "days_to_cover": latest.get("days_to_cover"),
+            "avg_daily_share_volume": latest.get("avg_daily_share_volume"),
+            "short_change_vs_previous": short_change,
+            "sample_count": len(records),
+        },
+        "rows": records,
+    }
+
+
+def request_short_interest(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_short_interest_rate_limit()
+        ret, us_df, hk_df = quote_ctx.get_short_interest(
+            code,
+            num=SHORT_DATA_MAX_ROWS,
+        )
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_short_interest failed for {code}: {us_df}")
+    data = market_frame_for_code(code, us_df, hk_df)
+    if data is None or isinstance(data, str):
+        raise RuntimeError(f"get_short_interest returned no usable data for {code}")
+    return summarize_short_interest(data)
+
+
+def sync_short_interests(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _short_interest_lock:
+        cache = load_short_interest_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], SHORT_INTEREST_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "short_interest": request_short_interest(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "short_interest": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_short_interest_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("short_interest") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_short_interests(codes, force=False):
+    sync_short_interests(codes, force=force)
+    cache = load_short_interest_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("short_interest")
         for code in codes
     }

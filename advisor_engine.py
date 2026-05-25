@@ -15,6 +15,7 @@ from advisor_profile import (
     get_capital_distributions,
     get_capital_flows,
     get_company_profiles,
+    get_daily_short_volumes,
     get_earnings_moves,
     get_financials,
     get_operational_efficiency,
@@ -23,10 +24,12 @@ from advisor_profile import (
     sync_capital_distributions,
     sync_capital_flows,
     sync_company_profiles,
+    sync_daily_short_volumes,
     sync_earnings_moves,
     sync_financials,
     sync_operational_efficiency,
     sync_owner_plates,
+    sync_short_interests,
     sync_valuations,
 )
 from config import DATA_DIR
@@ -535,6 +538,61 @@ def capital_risk_adjustment(capital_flow, capital_distribution):
     return adjustment, reasons
 
 
+def daily_short_volume_summary(daily_short_volume):
+    return (daily_short_volume or {}).get("summary", {}) or {}
+
+
+def short_interest_summary(short_interest):
+    return (short_interest or {}).get("summary", {}) or {}
+
+
+def short_risk_adjustment(daily_short_volume, short_interest):
+    volume = daily_short_volume_summary(daily_short_volume)
+    interest = short_interest_summary(short_interest)
+    adjustment = 0
+    reasons = []
+
+    short_percent_20 = safe_float(volume.get("avg_short_percent_20"), None)
+    latest_short_percent = safe_float(volume.get("latest_short_percent"), None)
+    days_to_cover = safe_float(interest.get("days_to_cover"), None)
+    interest_change = safe_float(interest.get("short_change_vs_previous"), None)
+    interest_percent = safe_float(interest.get("short_percent"), None)
+
+    if short_percent_20 is not None:
+        if short_percent_20 >= 45:
+            adjustment += 6
+            reasons.append("近20期卖空成交比例偏高")
+        elif short_percent_20 >= 30:
+            adjustment += 3
+            reasons.append("近20期卖空成交比例中等偏高")
+
+    if latest_short_percent is not None and short_percent_20 is not None and latest_short_percent > short_percent_20 + 10:
+        adjustment += 3
+        reasons.append("最新卖空比例高于近期均值")
+
+    if days_to_cover is not None:
+        if days_to_cover >= 5:
+            adjustment += 5
+            reasons.append("空头回补天数较高，波动和轧空风险都上升")
+        elif days_to_cover >= 3:
+            adjustment += 3
+            reasons.append("空头回补天数中等偏高")
+
+    if interest_change is not None:
+        if interest_change >= 0.15:
+            adjustment += 5
+            reasons.append("空头持仓较上期明显增加")
+        elif interest_change <= -0.15:
+            adjustment -= 3
+            reasons.append("空头持仓较上期明显下降")
+
+    if interest_percent is not None and interest_percent >= 10:
+        adjustment += 4
+        reasons.append("空头持仓比例偏高")
+
+    return adjustment, reasons
+
+
 def score_position(
     position,
     daily_frame,
@@ -549,6 +607,8 @@ def score_position(
     operational_efficiency=None,
     capital_flow=None,
     capital_distribution=None,
+    daily_short_volume=None,
+    short_interest=None,
 ):
     code = position.get("code", "")
     plates = plates or []
@@ -622,6 +682,7 @@ def score_position(
     earnings_addon, earnings_reasons = earnings_risk_adjustment(earnings)
     efficiency_addon, efficiency_reasons = operational_efficiency_risk_adjustment(operational_efficiency)
     capital_addon, capital_reasons = capital_risk_adjustment(capital_flow, capital_distribution)
+    short_addon, short_reasons = short_risk_adjustment(daily_short_volume, short_interest)
     risk_score = (
         volatility_risk * weights["volatility"]
         + drawdown_risk * weights["drawdown"]
@@ -634,6 +695,7 @@ def score_position(
         + earnings_addon
         + efficiency_addon
         + capital_addon
+        + short_addon
         + max(0, 50 - trend_score) * weights["trend"]
     )
     risk_score = round(max(0, min(100, risk_score)), 1)
@@ -678,6 +740,7 @@ def score_position(
     reasons.extend(earnings_reasons)
     reasons.extend(efficiency_reasons)
     reasons.extend(capital_reasons)
+    reasons.extend(short_reasons)
 
     return {
         "code": code,
@@ -696,6 +759,8 @@ def score_position(
             "operational_efficiency": operational_efficiency_summary(operational_efficiency),
             "capital_flow": capital_flow_summary(capital_flow),
             "capital_distribution": capital_distribution_summary(capital_distribution),
+            "daily_short_volume": daily_short_volume_summary(daily_short_volume),
+            "short_interest": short_interest_summary(short_interest),
         },
         "weight": round(weight, 4),
         "market_val": market_val,
@@ -806,6 +871,8 @@ def sync_advisor_profiles(force=False):
     operational_efficiency_result = sync_operational_efficiency(codes, force=force)
     capital_flow_result = sync_capital_flows(codes, force=force)
     capital_distribution_result = sync_capital_distributions(codes, force=force)
+    daily_short_volume_result = sync_daily_short_volumes(codes, force=force)
+    short_interest_result = sync_short_interests(codes, force=force)
     return {
         "ok": (
             plate_result.get("ok")
@@ -816,6 +883,8 @@ def sync_advisor_profiles(force=False):
             and operational_efficiency_result.get("ok")
             and capital_flow_result.get("ok")
             and capital_distribution_result.get("ok")
+            and daily_short_volume_result.get("ok")
+            and short_interest_result.get("ok")
         ),
         "count": (
             plate_result.get("count", 0)
@@ -826,6 +895,8 @@ def sync_advisor_profiles(force=False):
             + operational_efficiency_result.get("count", 0)
             + capital_flow_result.get("count", 0)
             + capital_distribution_result.get("count", 0)
+            + daily_short_volume_result.get("count", 0)
+            + short_interest_result.get("count", 0)
         ),
         "plates": plate_result,
         "valuations": valuation_result,
@@ -835,6 +906,8 @@ def sync_advisor_profiles(force=False):
         "operational_efficiency": operational_efficiency_result,
         "capital_flows": capital_flow_result,
         "capital_distributions": capital_distribution_result,
+        "daily_short_volumes": daily_short_volume_result,
+        "short_interests": short_interest_result,
     }
 
 
@@ -859,6 +932,8 @@ def build_advisor_report(force_sync=False):
     operational_efficiency = get_operational_efficiency(codes)
     capital_flows = get_capital_flows(codes)
     capital_distributions = get_capital_distributions(codes)
+    daily_short_volumes = get_daily_short_volumes(codes)
+    short_interests = get_short_interests(codes)
     if force_sync:
         for position in positions:
             code = position.get("code")
@@ -872,6 +947,8 @@ def build_advisor_report(force_sync=False):
         operational_efficiency = get_operational_efficiency(codes, force=True)
         capital_flows = get_capital_flows(codes, force=True)
         capital_distributions = get_capital_distributions(codes, force=True)
+        daily_short_volumes = get_daily_short_volumes(codes, force=True)
+        short_interests = get_short_interests(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
     reports = []
@@ -894,6 +971,8 @@ def build_advisor_report(force_sync=False):
             operational_efficiency=operational_efficiency.get(code),
             capital_flow=capital_flows.get(code),
             capital_distribution=capital_distributions.get(code),
+            daily_short_volume=daily_short_volumes.get(code),
+            short_interest=short_interests.get(code),
         ))
 
     exposure = portfolio_exposure(reports)

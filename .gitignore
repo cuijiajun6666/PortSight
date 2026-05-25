@@ -21,3 +21,5 @@ data/*
 !data/advisor_operational_efficiency.json
 !data/advisor_capital_flow.json
 !data/advisor_capital_distribution.json
+!data/advisor_daily_short_volume.json
+!data/advisor_short_interest.json
