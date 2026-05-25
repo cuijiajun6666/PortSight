@@ -11,7 +11,7 @@ mkdir -p data
 
 files_to_add=()
 
-for name in asset_snapshots.json trade_deals.json; do
+for name in asset_snapshots.json trade_deals.json advisor_state.json advisor_symbol_meta.json; do
   if [[ -f "${DATA_DIR}/${name}" ]]; then
     cp "${DATA_DIR}/${name}" "data/${name}"
     files_to_add+=("data/${name}")

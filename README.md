@@ -140,6 +140,46 @@ bash /opt/moomoo-backend/app/deploy/install_runtime_data_push_timer.sh
 
 The timer runs daily at `22:30 UTC`, after the usual US market close snapshot job.
 
+## Advisor
+
+The advisor is a rule-based portfolio analysis engine for medium/long-term holding decisions. It does not place orders.
+
+It uses cached historical K lines from moomoo:
+
+```text
+/opt/moomoo-backend/data/klines/day
+/opt/moomoo-backend/data/klines/week
+/opt/moomoo-backend/data/klines/month
+```
+
+Daily, weekly, and monthly K lines are requested separately from moomoo. Moomoo does not count different K-line periods for the same symbol as separate historical K-line quota usage, but each first-page request still counts toward the per-30-second request rate. The backend caches the result locally and refreshes after market close.
+
+Advisor endpoints:
+
+```bash
+curl http://127.0.0.1:8000/advisor/suggestions
+curl "http://127.0.0.1:8000/advisor/suggestions?refresh=true"
+curl "http://127.0.0.1:8000/advisor/symbol?symbol=US.SIDU"
+curl -X POST "http://127.0.0.1:8000/advisor/sync_klines"
+curl -X POST "http://127.0.0.1:8000/advisor/refresh"
+```
+
+The backend also runs an advisor refresh job on weekdays at `16:25 America/New_York`, after the market close snapshot.
+
+Tracked advisor runtime config:
+
+```text
+data/advisor_state.json
+data/advisor_symbol_meta.json
+```
+
+Ignored advisor cache:
+
+```text
+data/klines/
+data/advisor_report.json
+```
+
 ## Backend Service Commands
 
 Check service status:

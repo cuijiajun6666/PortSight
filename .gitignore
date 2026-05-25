@@ -10,3 +10,5 @@ data/*
 !data/
 !data/asset_snapshots.json
 !data/trade_deals.json
+!data/advisor_state.json
+!data/advisor_symbol_meta.json
