@@ -12,22 +12,29 @@ from config import DATA_DIR, HOST, PORT
 OWNER_PLATE_FILE = DATA_DIR / "advisor_owner_plates.json"
 VALUATION_FILE = DATA_DIR / "advisor_valuations.json"
 FINANCIALS_FILE = DATA_DIR / "advisor_financials.json"
+EARNINGS_MOVE_FILE = DATA_DIR / "advisor_earnings_moves.json"
 OWNER_PLATE_REFRESH_SECONDS = int(os.getenv("ADVISOR_OWNER_PLATE_REFRESH_SECONDS", "86400"))
 VALUATION_REFRESH_SECONDS = int(os.getenv("ADVISOR_VALUATION_REFRESH_SECONDS", "86400"))
 FINANCIALS_REFRESH_SECONDS = int(os.getenv("ADVISOR_FINANCIALS_REFRESH_SECONDS", "86400"))
+EARNINGS_MOVE_REFRESH_SECONDS = int(os.getenv("ADVISOR_EARNINGS_MOVE_REFRESH_SECONDS", "86400"))
 OWNER_PLATE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OWNER_PLATE_REQUEST_INTERVAL_SECONDS", "3.2"))
 VALUATION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_VALUATION_REQUEST_INTERVAL_SECONDS", "1.1"))
 FINANCIALS_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_FINANCIALS_REQUEST_INTERVAL_SECONDS", "1.1"))
+EARNINGS_MOVE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_EARNINGS_MOVE_REQUEST_INTERVAL_SECONDS", "1.1"))
 OWNER_PLATE_BATCH_SIZE = 200
 FINANCIALS_REPORT_COUNT = int(os.getenv("ADVISOR_FINANCIALS_REPORT_COUNT", "6"))
+EARNINGS_MOVE_PERIOD_COUNT = int(os.getenv("ADVISOR_EARNINGS_MOVE_PERIOD_COUNT", "8"))
+EARNINGS_HISTORY_MAX_ROWS = int(os.getenv("ADVISOR_EARNINGS_HISTORY_MAX_ROWS", "600"))
 
 _owner_plate_lock = threading.RLock()
 _valuation_lock = threading.RLock()
 _financials_lock = threading.RLock()
+_earnings_move_lock = threading.RLock()
 _rate_limit_lock = threading.RLock()
 _last_owner_plate_request_at = 0.0
 _last_valuation_request_at = 0.0
 _last_financials_request_at = 0.0
+_last_earnings_move_request_at = 0.0
 
 
 def utc_now_iso():
@@ -81,6 +88,15 @@ def save_financials_cache(cache):
     atomic_write_json(FINANCIALS_FILE, cache)
 
 
+def load_earnings_move_cache():
+    return read_json(EARNINGS_MOVE_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_earnings_move_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(EARNINGS_MOVE_FILE, cache)
+
+
 def cache_is_fresh(symbol_payload, ttl_seconds):
     fetched_at = symbol_payload.get("fetched_at")
     if not fetched_at:
@@ -122,6 +138,16 @@ def wait_for_financials_rate_limit():
         _last_financials_request_at = time.monotonic()
 
 
+def wait_for_earnings_move_rate_limit():
+    global _last_earnings_move_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = EARNINGS_MOVE_REQUEST_INTERVAL_SECONDS - (now - _last_earnings_move_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_earnings_move_request_at = time.monotonic()
+
+
 def json_value(value):
     try:
         if value != value:
@@ -149,6 +175,17 @@ def frame_to_plate_map(data):
             "plate_type": json_value(row.get("plate_type")),
         })
     return result
+
+
+def frame_to_records(data, max_rows=None):
+    records = []
+    source = data.head(max_rows) if max_rows else data
+    for _, row in source.iterrows():
+        records.append({
+            str(key): json_value(value)
+            for key, value in row.to_dict().items()
+        })
+    return records
 
 
 def request_owner_plates(codes):
@@ -436,5 +473,169 @@ def get_financials(codes, force=False):
     symbols = cache.get("symbols", {})
     return {
         code: symbols.get(code, {}).get("financials")
+        for code in codes
+    }
+
+
+def pct_change(start, end):
+    try:
+        start = float(start)
+        end = float(end)
+        if start == 0:
+            return None
+        return end / start - 1
+    except Exception:
+        return None
+
+
+def summarize_earnings_history(history_records):
+    by_period = {}
+    for row in history_records:
+        key = f"{row.get('fiscal_year')}|{row.get('financial_type')}|{row.get('period_text')}"
+        by_period.setdefault(key, []).append(row)
+
+    returns_1d = []
+    returns_5d = []
+    pre_returns_5d = []
+    max_abs_moves = []
+    latest = None
+
+    for rows in by_period.values():
+        by_delta = {
+            int(row.get("schedule_delta"))
+            for row in rows
+            if row.get("schedule_delta") is not None
+        }
+        row_by_delta = {
+            int(row.get("schedule_delta")): row
+            for row in rows
+            if row.get("schedule_delta") is not None
+        }
+        event = row_by_delta.get(0)
+        if not event:
+            continue
+        latest = latest or event
+        event_close = event.get("close_price") or event.get("schedule_close_price")
+        if 1 in by_delta:
+            value = pct_change(event_close, row_by_delta[1].get("schedule_close_price"))
+            if value is not None:
+                returns_1d.append(value)
+        if 5 in by_delta:
+            value = pct_change(event_close, row_by_delta[5].get("schedule_close_price"))
+            if value is not None:
+                returns_5d.append(value)
+        if -5 in by_delta:
+            value = pct_change(row_by_delta[-5].get("schedule_close_price"), event_close)
+            if value is not None:
+                pre_returns_5d.append(value)
+
+        period_moves = []
+        for delta, row in row_by_delta.items():
+            if -5 <= delta <= 5 and delta != 0:
+                value = pct_change(event_close, row.get("schedule_close_price"))
+                if value is not None:
+                    period_moves.append(abs(value))
+        if period_moves:
+            max_abs_moves.append(max(period_moves))
+
+    def avg(values):
+        return sum(values) / len(values) if values else None
+
+    return {
+        "latest_period": latest.get("period_text") if latest else None,
+        "latest_pub_trading_day": latest.get("pub_trading_day_str") if latest else None,
+        "latest_pub_time": latest.get("pub_time_str") if latest else None,
+        "latest_predict_vola_ratio": latest.get("predict_vola_ratio_newest") if latest else None,
+        "latest_predict_vola_val": latest.get("predict_vola_val_newest") if latest else None,
+        "latest_option_iv_crush": latest.get("option_iv_crush") if latest else None,
+        "avg_1d_return_after_earnings": avg(returns_1d),
+        "avg_5d_return_after_earnings": avg(returns_5d),
+        "avg_5d_return_before_earnings": avg(pre_returns_5d),
+        "avg_max_abs_move_5d": avg(max_abs_moves),
+        "sample_period_count": len(by_period),
+    }
+
+
+def summarize_earnings_move(move_records, history_records):
+    return {
+        "summary": summarize_earnings_history(history_records),
+        "move_rows": move_records[:120],
+        "history_rows": history_records[:EARNINGS_HISTORY_MAX_ROWS],
+    }
+
+
+def request_earnings_move(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_earnings_move_rate_limit()
+        ret_move, move_data = quote_ctx.get_financials_earnings_price_move(
+            code,
+            period_count=EARNINGS_MOVE_PERIOD_COUNT,
+        )
+        wait_for_earnings_move_rate_limit()
+        ret_history, history_data = quote_ctx.get_financials_earnings_price_history(code)
+    finally:
+        quote_ctx.close()
+
+    if ret_move != RET_OK:
+        raise RuntimeError(f"get_financials_earnings_price_move failed for {code}: {move_data}")
+    if ret_history != RET_OK:
+        raise RuntimeError(f"get_financials_earnings_price_history failed for {code}: {history_data}")
+
+    return summarize_earnings_move(
+        frame_to_records(move_data),
+        frame_to_records(history_data, max_rows=EARNINGS_HISTORY_MAX_ROWS),
+    )
+
+
+def sync_earnings_moves(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _earnings_move_lock:
+        cache = load_earnings_move_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], EARNINGS_MOVE_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "earnings": request_earnings_move(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "earnings": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_earnings_move_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("earnings") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_earnings_moves(codes, force=False):
+    sync_earnings_moves(codes, force=force)
+    cache = load_earnings_move_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("earnings")
         for code in codes
     }

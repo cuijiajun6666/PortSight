@@ -108,6 +108,22 @@ def financial_features(position):
     }
 
 
+def earnings_features(position):
+    earnings = position.get("profile", {}).get("earnings") or {}
+    return {
+        "earnings_latest_period": earnings.get("latest_period"),
+        "earnings_latest_pub_trading_day": earnings.get("latest_pub_trading_day"),
+        "earnings_predict_vola_ratio": safe_float(earnings.get("latest_predict_vola_ratio"), None),
+        "earnings_predict_vola_val": safe_float(earnings.get("latest_predict_vola_val"), None),
+        "earnings_option_iv_crush": safe_float(earnings.get("latest_option_iv_crush"), None),
+        "earnings_avg_1d_return_after": safe_float(earnings.get("avg_1d_return_after_earnings"), None),
+        "earnings_avg_5d_return_after": safe_float(earnings.get("avg_5d_return_after_earnings"), None),
+        "earnings_avg_5d_return_before": safe_float(earnings.get("avg_5d_return_before_earnings"), None),
+        "earnings_avg_max_abs_move_5d": safe_float(earnings.get("avg_max_abs_move_5d"), None),
+        "earnings_sample_period_count": safe_float(earnings.get("sample_period_count"), None),
+    }
+
+
 def build_feature_row(report, position):
     daily = position.get("signals", {}).get("daily", {})
     weekly = position.get("signals", {}).get("weekly", {})
@@ -138,6 +154,7 @@ def build_feature_row(report, position):
         "drawdown_from_high": safe_float(position.get("prediction", {}).get("drawdown_from_high")),
         **valuation_features(position),
         **financial_features(position),
+        **earnings_features(position),
     }
 
     signals = [

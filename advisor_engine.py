@@ -12,9 +12,11 @@ from advisor_kline_cache import (
     sync_daily_klines,
 )
 from advisor_profile import (
+    get_earnings_moves,
     get_financials,
     get_owner_plates,
     get_valuations,
+    sync_earnings_moves,
     sync_financials,
     sync_owner_plates,
     sync_valuations,
@@ -356,6 +358,49 @@ def financial_risk_adjustment(financials):
     return adjustment, reasons
 
 
+def earnings_summary(earnings):
+    if not earnings:
+        return {}
+    return earnings.get("summary", {}) or {}
+
+
+def earnings_risk_adjustment(earnings):
+    summary = earnings_summary(earnings)
+    if not summary:
+        return 0, []
+
+    reasons = []
+    adjustment = 0
+    max_move = safe_float(summary.get("avg_max_abs_move_5d"))
+    post_5d = safe_float(summary.get("avg_5d_return_after_earnings"))
+    iv_crush = safe_float(summary.get("latest_option_iv_crush"))
+    predict_vola = safe_float(summary.get("latest_predict_vola_ratio"))
+
+    if max_move >= 0.12:
+        adjustment += 8
+        reasons.append("历史财报日前后5个交易日平均波动较大")
+    elif max_move >= 0.07:
+        adjustment += 4
+        reasons.append("历史财报日前后存在中等波动风险")
+
+    if post_5d <= -0.06:
+        adjustment += 5
+        reasons.append("历史财报后5日平均表现偏弱")
+    elif post_5d >= 0.06:
+        adjustment -= 3
+        reasons.append("历史财报后5日平均表现偏强")
+
+    if iv_crush >= 20:
+        adjustment += 3
+        reasons.append("历史/当前期权IV crush较高，财报事件波动定价较重")
+
+    if predict_vola >= 10:
+        adjustment += 3
+        reasons.append("最新财报预期波动比例较高")
+
+    return adjustment, reasons
+
+
 def score_position(
     position,
     daily_frame,
@@ -365,6 +410,7 @@ def score_position(
     plates=None,
     valuation=None,
     financials=None,
+    earnings=None,
 ):
     code = position.get("code", "")
     plates = plates or []
@@ -435,6 +481,7 @@ def score_position(
     volatility_addon = 10 if vol_tier == "extreme" else 5 if vol_tier == "high" else 0
     valuation_addon, valuation_reasons = valuation_risk_adjustment(valuation)
     financial_addon, financial_reasons = financial_risk_adjustment(financials)
+    earnings_addon, earnings_reasons = earnings_risk_adjustment(earnings)
     risk_score = (
         volatility_risk * weights["volatility"]
         + drawdown_risk * weights["drawdown"]
@@ -444,6 +491,7 @@ def score_position(
         + volatility_addon
         + valuation_addon
         + financial_addon
+        + earnings_addon
         + max(0, 50 - trend_score) * weights["trend"]
     )
     risk_score = round(max(0, min(100, risk_score)), 1)
@@ -485,6 +533,7 @@ def score_position(
         reasons.append("历史K线显示波动率偏高，仓位上限应低于普通大盘股")
     reasons.extend(valuation_reasons)
     reasons.extend(financial_reasons)
+    reasons.extend(earnings_reasons)
 
     return {
         "code": code,
@@ -498,6 +547,7 @@ def score_position(
             "plates": plates,
             "valuation": valuation,
             "financials": financial_summary(financials),
+            "earnings": earnings_summary(earnings),
         },
         "weight": round(weight, 4),
         "market_val": market_val,
@@ -603,16 +653,24 @@ def sync_advisor_profiles(force=False):
     plate_result = sync_owner_plates(codes, force=force)
     valuation_result = sync_valuations(codes, force=force)
     financial_result = sync_financials(codes, force=force)
+    earnings_result = sync_earnings_moves(codes, force=force)
     return {
-        "ok": plate_result.get("ok") and valuation_result.get("ok") and financial_result.get("ok"),
+        "ok": (
+            plate_result.get("ok")
+            and valuation_result.get("ok")
+            and financial_result.get("ok")
+            and earnings_result.get("ok")
+        ),
         "count": (
             plate_result.get("count", 0)
             + valuation_result.get("count", 0)
             + financial_result.get("count", 0)
+            + earnings_result.get("count", 0)
         ),
         "plates": plate_result,
         "valuations": valuation_result,
         "financials": financial_result,
+        "earnings": earnings_result,
     }
 
 
@@ -632,6 +690,7 @@ def build_advisor_report(force_sync=False):
     owner_plates = get_owner_plates(codes)
     valuations = get_valuations(codes)
     financials = get_financials(codes)
+    earnings = get_earnings_moves(codes)
     if force_sync:
         for position in positions:
             code = position.get("code")
@@ -640,6 +699,7 @@ def build_advisor_report(force_sync=False):
         owner_plates = get_owner_plates(codes, force=True)
         valuations = get_valuations(codes, force=True)
         financials = get_financials(codes, force=True)
+        earnings = get_earnings_moves(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
     reports = []
@@ -657,6 +717,7 @@ def build_advisor_report(force_sync=False):
             plates=owner_plates.get(code, []),
             valuation=valuations.get(code),
             financials=financials.get(code),
+            earnings=earnings.get(code),
         ))
 
     exposure = portfolio_exposure(reports)
