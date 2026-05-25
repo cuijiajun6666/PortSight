@@ -12,12 +12,16 @@ from advisor_kline_cache import (
     sync_daily_klines,
 )
 from advisor_profile import (
+    get_capital_distributions,
+    get_capital_flows,
     get_company_profiles,
     get_earnings_moves,
     get_financials,
     get_operational_efficiency,
     get_owner_plates,
     get_valuations,
+    sync_capital_distributions,
+    sync_capital_flows,
     sync_company_profiles,
     sync_earnings_moves,
     sync_financials,
@@ -482,6 +486,55 @@ def operational_efficiency_risk_adjustment(operational_efficiency):
     return adjustment, reasons
 
 
+def capital_flow_summary(capital_flow):
+    return (capital_flow or {}).get("summary", {}) or {}
+
+
+def capital_distribution_summary(capital_distribution):
+    return (capital_distribution or {}).get("summary", {}) or {}
+
+
+def capital_risk_adjustment(capital_flow, capital_distribution):
+    flow = capital_flow_summary(capital_flow)
+    distribution = capital_distribution_summary(capital_distribution)
+    adjustment = 0
+    reasons = []
+
+    in_flow_20 = safe_float(flow.get("in_flow_20"), None)
+    main_in_flow_20 = safe_float(flow.get("main_in_flow_20"), None)
+    main_net = safe_float(distribution.get("main_net"), None)
+    small_net = safe_float(distribution.get("small_net"), None)
+
+    if in_flow_20 is not None:
+        if in_flow_20 < 0:
+            adjustment += 4
+            reasons.append("近20期资金整体净流出")
+        elif in_flow_20 > 0:
+            adjustment -= 2
+            reasons.append("近20期资金整体净流入")
+
+    if main_in_flow_20 is not None:
+        if main_in_flow_20 < 0:
+            adjustment += 5
+            reasons.append("近20期主力资金净流出")
+        elif main_in_flow_20 > 0:
+            adjustment -= 3
+            reasons.append("近20期主力资金净流入")
+
+    if main_net is not None and main_net < 0:
+        adjustment += 3
+        reasons.append("最新资金分布显示大单/特大单净流出")
+    elif main_net is not None and main_net > 0:
+        adjustment -= 2
+        reasons.append("最新资金分布显示大单/特大单净流入")
+
+    if main_net is not None and small_net is not None and main_net < 0 < small_net:
+        adjustment += 3
+        reasons.append("主力净流出但小单净流入，筹码结构需谨慎")
+
+    return adjustment, reasons
+
+
 def score_position(
     position,
     daily_frame,
@@ -494,6 +547,8 @@ def score_position(
     earnings=None,
     company_profile=None,
     operational_efficiency=None,
+    capital_flow=None,
+    capital_distribution=None,
 ):
     code = position.get("code", "")
     plates = plates or []
@@ -566,6 +621,7 @@ def score_position(
     financial_addon, financial_reasons = financial_risk_adjustment(financials)
     earnings_addon, earnings_reasons = earnings_risk_adjustment(earnings)
     efficiency_addon, efficiency_reasons = operational_efficiency_risk_adjustment(operational_efficiency)
+    capital_addon, capital_reasons = capital_risk_adjustment(capital_flow, capital_distribution)
     risk_score = (
         volatility_risk * weights["volatility"]
         + drawdown_risk * weights["drawdown"]
@@ -577,6 +633,7 @@ def score_position(
         + financial_addon
         + earnings_addon
         + efficiency_addon
+        + capital_addon
         + max(0, 50 - trend_score) * weights["trend"]
     )
     risk_score = round(max(0, min(100, risk_score)), 1)
@@ -620,6 +677,7 @@ def score_position(
     reasons.extend(financial_reasons)
     reasons.extend(earnings_reasons)
     reasons.extend(efficiency_reasons)
+    reasons.extend(capital_reasons)
 
     return {
         "code": code,
@@ -636,6 +694,8 @@ def score_position(
             "earnings": earnings_summary(earnings),
             "company_profile": company_profile_summary(company_profile),
             "operational_efficiency": operational_efficiency_summary(operational_efficiency),
+            "capital_flow": capital_flow_summary(capital_flow),
+            "capital_distribution": capital_distribution_summary(capital_distribution),
         },
         "weight": round(weight, 4),
         "market_val": market_val,
@@ -744,6 +804,8 @@ def sync_advisor_profiles(force=False):
     earnings_result = sync_earnings_moves(codes, force=force)
     company_profile_result = sync_company_profiles(codes, force=force)
     operational_efficiency_result = sync_operational_efficiency(codes, force=force)
+    capital_flow_result = sync_capital_flows(codes, force=force)
+    capital_distribution_result = sync_capital_distributions(codes, force=force)
     return {
         "ok": (
             plate_result.get("ok")
@@ -752,6 +814,8 @@ def sync_advisor_profiles(force=False):
             and earnings_result.get("ok")
             and company_profile_result.get("ok")
             and operational_efficiency_result.get("ok")
+            and capital_flow_result.get("ok")
+            and capital_distribution_result.get("ok")
         ),
         "count": (
             plate_result.get("count", 0)
@@ -760,6 +824,8 @@ def sync_advisor_profiles(force=False):
             + earnings_result.get("count", 0)
             + company_profile_result.get("count", 0)
             + operational_efficiency_result.get("count", 0)
+            + capital_flow_result.get("count", 0)
+            + capital_distribution_result.get("count", 0)
         ),
         "plates": plate_result,
         "valuations": valuation_result,
@@ -767,6 +833,8 @@ def sync_advisor_profiles(force=False):
         "earnings": earnings_result,
         "company_profiles": company_profile_result,
         "operational_efficiency": operational_efficiency_result,
+        "capital_flows": capital_flow_result,
+        "capital_distributions": capital_distribution_result,
     }
 
 
@@ -789,6 +857,8 @@ def build_advisor_report(force_sync=False):
     earnings = get_earnings_moves(codes)
     company_profiles = get_company_profiles(codes)
     operational_efficiency = get_operational_efficiency(codes)
+    capital_flows = get_capital_flows(codes)
+    capital_distributions = get_capital_distributions(codes)
     if force_sync:
         for position in positions:
             code = position.get("code")
@@ -800,6 +870,8 @@ def build_advisor_report(force_sync=False):
         earnings = get_earnings_moves(codes, force=True)
         company_profiles = get_company_profiles(codes, force=True)
         operational_efficiency = get_operational_efficiency(codes, force=True)
+        capital_flows = get_capital_flows(codes, force=True)
+        capital_distributions = get_capital_distributions(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
     reports = []
@@ -820,6 +892,8 @@ def build_advisor_report(force_sync=False):
             earnings=earnings.get(code),
             company_profile=company_profiles.get(code),
             operational_efficiency=operational_efficiency.get(code),
+            capital_flow=capital_flows.get(code),
+            capital_distribution=capital_distributions.get(code),
         ))
 
     exposure = portfolio_exposure(reports)

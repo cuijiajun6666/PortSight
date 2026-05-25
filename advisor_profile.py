@@ -15,23 +15,31 @@ FINANCIALS_FILE = DATA_DIR / "advisor_financials.json"
 EARNINGS_MOVE_FILE = DATA_DIR / "advisor_earnings_moves.json"
 COMPANY_PROFILE_FILE = DATA_DIR / "advisor_company_profiles.json"
 OPERATIONAL_EFFICIENCY_FILE = DATA_DIR / "advisor_operational_efficiency.json"
+CAPITAL_FLOW_FILE = DATA_DIR / "advisor_capital_flow.json"
+CAPITAL_DISTRIBUTION_FILE = DATA_DIR / "advisor_capital_distribution.json"
 OWNER_PLATE_REFRESH_SECONDS = int(os.getenv("ADVISOR_OWNER_PLATE_REFRESH_SECONDS", "86400"))
 VALUATION_REFRESH_SECONDS = int(os.getenv("ADVISOR_VALUATION_REFRESH_SECONDS", "86400"))
 FINANCIALS_REFRESH_SECONDS = int(os.getenv("ADVISOR_FINANCIALS_REFRESH_SECONDS", "86400"))
 EARNINGS_MOVE_REFRESH_SECONDS = int(os.getenv("ADVISOR_EARNINGS_MOVE_REFRESH_SECONDS", "86400"))
 COMPANY_PROFILE_REFRESH_SECONDS = int(os.getenv("ADVISOR_COMPANY_PROFILE_REFRESH_SECONDS", "604800"))
 OPERATIONAL_EFFICIENCY_REFRESH_SECONDS = int(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_REFRESH_SECONDS", "86400"))
+CAPITAL_FLOW_REFRESH_SECONDS = int(os.getenv("ADVISOR_CAPITAL_FLOW_REFRESH_SECONDS", "86400"))
+CAPITAL_DISTRIBUTION_REFRESH_SECONDS = int(os.getenv("ADVISOR_CAPITAL_DISTRIBUTION_REFRESH_SECONDS", "86400"))
 OWNER_PLATE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OWNER_PLATE_REQUEST_INTERVAL_SECONDS", "3.2"))
 VALUATION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_VALUATION_REQUEST_INTERVAL_SECONDS", "1.1"))
 FINANCIALS_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_FINANCIALS_REQUEST_INTERVAL_SECONDS", "1.1"))
 EARNINGS_MOVE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_EARNINGS_MOVE_REQUEST_INTERVAL_SECONDS", "1.1"))
 COMPANY_PROFILE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_COMPANY_PROFILE_REQUEST_INTERVAL_SECONDS", "1.1"))
 OPERATIONAL_EFFICIENCY_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_REQUEST_INTERVAL_SECONDS", "1.1"))
+CAPITAL_FLOW_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_CAPITAL_FLOW_REQUEST_INTERVAL_SECONDS", "1.1"))
+CAPITAL_DISTRIBUTION_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_CAPITAL_DISTRIBUTION_REQUEST_INTERVAL_SECONDS", "1.1"))
 OWNER_PLATE_BATCH_SIZE = 200
 FINANCIALS_REPORT_COUNT = int(os.getenv("ADVISOR_FINANCIALS_REPORT_COUNT", "6"))
 EARNINGS_MOVE_PERIOD_COUNT = int(os.getenv("ADVISOR_EARNINGS_MOVE_PERIOD_COUNT", "8"))
 EARNINGS_HISTORY_MAX_ROWS = int(os.getenv("ADVISOR_EARNINGS_HISTORY_MAX_ROWS", "600"))
 OPERATIONAL_EFFICIENCY_COUNT = int(os.getenv("ADVISOR_OPERATIONAL_EFFICIENCY_COUNT", "10"))
+CAPITAL_FLOW_MAX_ROWS = int(os.getenv("ADVISOR_CAPITAL_FLOW_MAX_ROWS", "260"))
+CAPITAL_FLOW_PERIOD = os.getenv("ADVISOR_CAPITAL_FLOW_PERIOD", "DAY")
 
 _owner_plate_lock = threading.RLock()
 _valuation_lock = threading.RLock()
@@ -39,6 +47,8 @@ _financials_lock = threading.RLock()
 _earnings_move_lock = threading.RLock()
 _company_profile_lock = threading.RLock()
 _operational_efficiency_lock = threading.RLock()
+_capital_flow_lock = threading.RLock()
+_capital_distribution_lock = threading.RLock()
 _rate_limit_lock = threading.RLock()
 _last_owner_plate_request_at = 0.0
 _last_valuation_request_at = 0.0
@@ -46,6 +56,8 @@ _last_financials_request_at = 0.0
 _last_earnings_move_request_at = 0.0
 _last_company_profile_request_at = 0.0
 _last_operational_efficiency_request_at = 0.0
+_last_capital_flow_request_at = 0.0
+_last_capital_distribution_request_at = 0.0
 
 
 def utc_now_iso():
@@ -126,6 +138,24 @@ def save_operational_efficiency_cache(cache):
     atomic_write_json(OPERATIONAL_EFFICIENCY_FILE, cache)
 
 
+def load_capital_flow_cache():
+    return read_json(CAPITAL_FLOW_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_capital_flow_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(CAPITAL_FLOW_FILE, cache)
+
+
+def load_capital_distribution_cache():
+    return read_json(CAPITAL_DISTRIBUTION_FILE, {"updated_at": None, "symbols": {}})
+
+
+def save_capital_distribution_cache(cache):
+    cache["updated_at"] = utc_now_iso()
+    atomic_write_json(CAPITAL_DISTRIBUTION_FILE, cache)
+
+
 def cache_is_fresh(symbol_payload, ttl_seconds):
     fetched_at = symbol_payload.get("fetched_at")
     if not fetched_at:
@@ -195,6 +225,26 @@ def wait_for_operational_efficiency_rate_limit():
         if wait_seconds > 0:
             time.sleep(wait_seconds)
         _last_operational_efficiency_request_at = time.monotonic()
+
+
+def wait_for_capital_flow_rate_limit():
+    global _last_capital_flow_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = CAPITAL_FLOW_REQUEST_INTERVAL_SECONDS - (now - _last_capital_flow_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_capital_flow_request_at = time.monotonic()
+
+
+def wait_for_capital_distribution_rate_limit():
+    global _last_capital_distribution_request_at
+    with _rate_limit_lock:
+        now = time.monotonic()
+        wait_seconds = CAPITAL_DISTRIBUTION_REQUEST_INTERVAL_SECONDS - (now - _last_capital_distribution_request_at)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_capital_distribution_request_at = time.monotonic()
 
 
 def json_value(value):
@@ -875,5 +925,205 @@ def get_operational_efficiency(codes, force=False):
     symbols = cache.get("symbols", {})
     return {
         code: symbols.get(code, {}).get("operational_efficiency")
+        for code in codes
+    }
+
+
+def capital_flow_period_type():
+    return getattr(PeriodType, CAPITAL_FLOW_PERIOD, PeriodType.INTRADAY)
+
+
+def sum_recent(records, field, count):
+    values = []
+    for row in records[-count:]:
+        value = row.get(field)
+        if isinstance(value, (int, float)):
+            values.append(float(value))
+    return sum(values) if values else None
+
+
+def latest_record(records):
+    return records[-1] if records else {}
+
+
+def summarize_capital_flow(data):
+    records = frame_to_records(data, max_rows=CAPITAL_FLOW_MAX_ROWS)
+    latest = latest_record(records)
+    return {
+        "latest": latest,
+        "summary": {
+            "latest_time": latest.get("capital_flow_item_time"),
+            "latest_valid_time": latest.get("last_valid_time"),
+            "latest_in_flow": latest.get("in_flow"),
+            "latest_main_in_flow": latest.get("main_in_flow"),
+            "latest_super_in_flow": latest.get("super_in_flow"),
+            "latest_big_in_flow": latest.get("big_in_flow"),
+            "latest_mid_in_flow": latest.get("mid_in_flow"),
+            "latest_sml_in_flow": latest.get("sml_in_flow"),
+            "in_flow_5": sum_recent(records, "in_flow", 5),
+            "in_flow_20": sum_recent(records, "in_flow", 20),
+            "main_in_flow_5": sum_recent(records, "main_in_flow", 5),
+            "main_in_flow_20": sum_recent(records, "main_in_flow", 20),
+            "super_in_flow_5": sum_recent(records, "super_in_flow", 5),
+            "big_in_flow_5": sum_recent(records, "big_in_flow", 5),
+            "sample_count": len(records),
+            "period": CAPITAL_FLOW_PERIOD,
+        },
+        "rows": records,
+    }
+
+
+def request_capital_flow(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_capital_flow_rate_limit()
+        ret, data = quote_ctx.get_capital_flow(
+            code,
+            period_type=capital_flow_period_type(),
+        )
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_capital_flow failed for {code}: {data}")
+    return summarize_capital_flow(data)
+
+
+def sync_capital_flows(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _capital_flow_lock:
+        cache = load_capital_flow_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], CAPITAL_FLOW_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "capital_flow": request_capital_flow(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "capital_flow": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_capital_flow_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("capital_flow") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_capital_flows(codes, force=False):
+    sync_capital_flows(codes, force=force)
+    cache = load_capital_flow_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("capital_flow")
+        for code in codes
+    }
+
+
+def summarize_capital_distribution(data):
+    records = frame_to_records(data)
+    latest = latest_record(records)
+    super_net = (latest.get("capital_in_super") or 0) - (latest.get("capital_out_super") or 0)
+    big_net = (latest.get("capital_in_big") or 0) - (latest.get("capital_out_big") or 0)
+    mid_net = (latest.get("capital_in_mid") or 0) - (latest.get("capital_out_mid") or 0)
+    small_net = (latest.get("capital_in_small") or 0) - (latest.get("capital_out_small") or 0)
+    return {
+        "latest": latest,
+        "summary": {
+            "update_time": latest.get("update_time"),
+            "super_net": super_net,
+            "big_net": big_net,
+            "main_net": super_net + big_net,
+            "mid_net": mid_net,
+            "small_net": small_net,
+            "retail_vs_main_net": small_net - (super_net + big_net),
+        },
+    }
+
+
+def request_capital_distribution(code):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        wait_for_capital_distribution_rate_limit()
+        ret, data = quote_ctx.get_capital_distribution(code)
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_capital_distribution failed for {code}: {data}")
+    return summarize_capital_distribution(data)
+
+
+def sync_capital_distributions(codes, force=False):
+    clean_codes = sorted({code for code in codes if code})
+    with _capital_distribution_lock:
+        cache = load_capital_distribution_cache()
+        symbols = cache.setdefault("symbols", {})
+        missing = [
+            code for code in clean_codes
+            if force or code not in symbols or not cache_is_fresh(symbols[code], CAPITAL_DISTRIBUTION_REFRESH_SECONDS)
+        ]
+
+        results = []
+        for code in missing:
+            try:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "capital_distribution": request_capital_distribution(code),
+                }
+                results.append({"ok": True, "code": code, "source": "moomoo"})
+            except Exception as exc:
+                symbols[code] = {
+                    "fetched_at": utc_now_iso(),
+                    "capital_distribution": None,
+                    "error": str(exc),
+                }
+                results.append({"ok": False, "code": code, "error": str(exc)})
+
+        save_capital_distribution_cache(cache)
+        for code in clean_codes:
+            if code not in missing:
+                results.append({
+                    "ok": symbols.get(code, {}).get("capital_distribution") is not None,
+                    "code": code,
+                    "source": "cache",
+                    **({"error": symbols.get(code, {}).get("error")} if symbols.get(code, {}).get("error") else {}),
+                })
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "count": len(results),
+            "results": results,
+        }
+
+
+def get_capital_distributions(codes, force=False):
+    sync_capital_distributions(codes, force=force)
+    cache = load_capital_distribution_cache()
+    symbols = cache.get("symbols", {})
+    return {
+        code: symbols.get(code, {}).get("capital_distribution")
         for code in codes
     }

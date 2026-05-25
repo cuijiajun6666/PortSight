@@ -147,6 +147,26 @@ def operational_efficiency_features(position):
     }
 
 
+def capital_features(position):
+    capital_flow = position.get("profile", {}).get("capital_flow") or {}
+    capital_distribution = position.get("profile", {}).get("capital_distribution") or {}
+    return {
+        "capital_latest_in_flow": safe_float(capital_flow.get("latest_in_flow"), None),
+        "capital_latest_main_in_flow": safe_float(capital_flow.get("latest_main_in_flow"), None),
+        "capital_in_flow_5": safe_float(capital_flow.get("in_flow_5"), None),
+        "capital_in_flow_20": safe_float(capital_flow.get("in_flow_20"), None),
+        "capital_main_in_flow_5": safe_float(capital_flow.get("main_in_flow_5"), None),
+        "capital_main_in_flow_20": safe_float(capital_flow.get("main_in_flow_20"), None),
+        "capital_super_in_flow_5": safe_float(capital_flow.get("super_in_flow_5"), None),
+        "capital_big_in_flow_5": safe_float(capital_flow.get("big_in_flow_5"), None),
+        "capital_distribution_main_net": safe_float(capital_distribution.get("main_net"), None),
+        "capital_distribution_super_net": safe_float(capital_distribution.get("super_net"), None),
+        "capital_distribution_big_net": safe_float(capital_distribution.get("big_net"), None),
+        "capital_distribution_small_net": safe_float(capital_distribution.get("small_net"), None),
+        "capital_distribution_retail_vs_main_net": safe_float(capital_distribution.get("retail_vs_main_net"), None),
+    }
+
+
 def build_feature_row(report, position):
     daily = position.get("signals", {}).get("daily", {})
     weekly = position.get("signals", {}).get("weekly", {})
@@ -180,6 +200,7 @@ def build_feature_row(report, position):
         **earnings_features(position),
         **company_profile_features(position),
         **operational_efficiency_features(position),
+        **capital_features(position),
     }
 
     signals = [
