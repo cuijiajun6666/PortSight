@@ -151,11 +151,14 @@ It uses cached historical K lines and owner-plate data from moomoo:
 /opt/moomoo-backend/data/klines/week
 /opt/moomoo-backend/data/klines/month
 /opt/moomoo-backend/data/advisor_owner_plates.json
+/opt/moomoo-backend/data/advisor_valuations.json
 ```
 
 Daily, weekly, and monthly K lines are requested separately from moomoo. Moomoo does not count different K-line periods for the same symbol as separate historical K-line quota usage, but each first-page request still counts toward the per-30-second request rate. The backend caches the result locally and refreshes after market close.
 
 Owner-plate data comes from `get_owner_plate`. It is cached locally and refreshed at most daily by default.
+
+Valuation data comes from `get_valuation_detail`. It is cached locally and refreshed at most daily by default.
 
 Advisor endpoints:
 

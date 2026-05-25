@@ -11,7 +11,12 @@ from advisor_kline_cache import (
     sync_all_period_klines,
     sync_daily_klines,
 )
-from advisor_profile import get_owner_plates, sync_owner_plates
+from advisor_profile import (
+    get_owner_plates,
+    get_valuations,
+    sync_owner_plates,
+    sync_valuations,
+)
 from config import DATA_DIR
 from routes.positions import get_positions
 
@@ -211,7 +216,63 @@ def volatility_tier(volatility):
     return "low"
 
 
-def score_position(position, daily_frame, portfolio_value, weights, meta, plates=None):
+def valuation_percentile_to_unit(value):
+    percentile = safe_float(value, -1)
+    if percentile < 0:
+        return None
+    if percentile > 1:
+        percentile = percentile / 100
+    return max(0, min(1, percentile))
+
+
+def valuation_risk_adjustment(valuation):
+    if not valuation:
+        return 0, []
+    trend = valuation.get("trend", {})
+    percentile = valuation_percentile_to_unit(trend.get("valuation_percentile"))
+    current = safe_float(trend.get("current_value"))
+    average = safe_float(trend.get("average_value"))
+    reasons = []
+    adjustment = 0
+
+    if percentile is not None:
+        if percentile >= 0.80:
+            adjustment += 10
+            reasons.append(f"估值处于历史高分位({percentile:.0%})，安全边际下降")
+        elif percentile <= 0.25:
+            adjustment -= 6
+            reasons.append(f"估值处于历史低分位({percentile:.0%})，估值压力相对较低")
+
+    if current > 0 and average > 0:
+        premium = current / average - 1
+        if premium >= 0.30:
+            adjustment += 6
+            reasons.append("当前估值明显高于历史均值")
+        elif premium <= -0.25:
+            adjustment -= 4
+            reasons.append("当前估值低于历史均值较多")
+
+    plate = valuation.get("plate_distribution", {})
+    plate_rank = safe_float(plate.get("plate_ranking"))
+    plate_count = safe_float(plate.get("plate_stock_item_count"))
+    if plate_rank > 0 and plate_count > 0:
+        rank_percentile = plate_rank / plate_count
+        if rank_percentile <= 0.20:
+            adjustment += 4
+            reasons.append("估值在所属板块中排名偏高")
+        elif rank_percentile >= 0.80:
+            adjustment -= 2
+            reasons.append("估值在所属板块中排名偏低")
+
+    growth = valuation.get("profit_growth_rate", {})
+    conclusion = str(growth.get("conclusion_detailed") or "")
+    if conclusion:
+        reasons.append(conclusion[:120])
+
+    return adjustment, reasons
+
+
+def score_position(position, daily_frame, portfolio_value, weights, meta, plates=None, valuation=None):
     code = position.get("code", "")
     plates = plates or []
     sector = "ETF" if position.get("is_etf") else classify_sector(code, meta, plates)
@@ -279,6 +340,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta, plates
     speculative_addon = 15 if risk_tier == "speculative" else 0
     size_addon = 8 if size_tier == "small_cap" else 0
     volatility_addon = 10 if vol_tier == "extreme" else 5 if vol_tier == "high" else 0
+    valuation_addon, valuation_reasons = valuation_risk_adjustment(valuation)
     risk_score = (
         volatility_risk * weights["volatility"]
         + drawdown_risk * weights["drawdown"]
@@ -286,6 +348,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta, plates
         + speculative_addon
         + size_addon
         + volatility_addon
+        + valuation_addon
         + max(0, 50 - trend_score) * weights["trend"]
     )
     risk_score = round(max(0, min(100, risk_score)), 1)
@@ -325,6 +388,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta, plates
         reasons.append("小盘/投机属性较强，更适合分批处理而不是一次性加仓")
     if vol_tier in ("high", "extreme"):
         reasons.append("历史K线显示波动率偏高，仓位上限应低于普通大盘股")
+    reasons.extend(valuation_reasons)
 
     return {
         "code": code,
@@ -336,6 +400,7 @@ def score_position(position, daily_frame, portfolio_value, weights, meta, plates
             "size_tier": size_tier,
             "volatility_tier": vol_tier,
             "plates": plates,
+            "valuation": valuation,
         },
         "weight": round(weight, 4),
         "market_val": market_val,
@@ -438,7 +503,14 @@ def sync_advisor_profiles(force=False):
         for item in positions_result.get("positions", [])
         if item.get("code") and not item.get("is_etf")
     ]
-    return sync_owner_plates(codes, force=force)
+    plate_result = sync_owner_plates(codes, force=force)
+    valuation_result = sync_valuations(codes, force=force)
+    return {
+        "ok": plate_result.get("ok") and valuation_result.get("ok"),
+        "count": plate_result.get("count", 0) + valuation_result.get("count", 0),
+        "plates": plate_result,
+        "valuations": valuation_result,
+    }
 
 
 def build_advisor_report(force_sync=False):
@@ -455,12 +527,14 @@ def build_advisor_report(force_sync=False):
         if item.get("code") and not item.get("is_etf")
     ]
     owner_plates = get_owner_plates(codes)
+    valuations = get_valuations(codes)
     if force_sync:
         for position in positions:
             code = position.get("code")
             if code:
                 sync_all_period_klines(code, force=True)
         owner_plates = get_owner_plates(codes, force=True)
+        valuations = get_valuations(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
     reports = []
@@ -476,6 +550,7 @@ def build_advisor_report(force_sync=False):
             state["weights"],
             meta,
             plates=owner_plates.get(code, []),
+            valuation=valuations.get(code),
         ))
 
     exposure = portfolio_exposure(reports)
