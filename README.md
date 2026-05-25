@@ -169,6 +169,9 @@ curl "http://127.0.0.1:8000/advisor/symbol?symbol=US.SIDU"
 curl -X POST "http://127.0.0.1:8000/advisor/sync_klines"
 curl -X POST "http://127.0.0.1:8000/advisor/sync_profiles"
 curl -X POST "http://127.0.0.1:8000/advisor/refresh"
+curl -X POST "http://127.0.0.1:8000/advisor/training_samples/record"
+curl -X POST "http://127.0.0.1:8000/advisor/training_samples/update_targets"
+curl "http://127.0.0.1:8000/advisor/training_samples?limit=50"
 ```
 
 The backend also runs an advisor refresh job on weekdays at `16:25 America/New_York`, after the market close snapshot.
@@ -178,6 +181,7 @@ Tracked advisor runtime config:
 ```text
 data/advisor_state.json
 data/advisor_symbol_meta.json
+data/advisor_training_samples.json
 ```
 
 Ignored advisor cache:

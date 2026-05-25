@@ -8,6 +8,11 @@ from advisor_engine import (
     sync_advisor_klines,
     sync_advisor_profiles,
 )
+from advisor_training import (
+    get_training_samples,
+    record_training_samples,
+    update_training_targets,
+)
 
 
 router = APIRouter()
@@ -49,3 +54,18 @@ def get_advisor_suggestions(refresh: bool = False):
 @router.get("/advisor/symbol")
 def get_advisor_symbol(symbol: str, refresh: bool = False):
     return get_symbol_advice(symbol, refresh=refresh)
+
+
+@router.post("/advisor/training_samples/record")
+def post_record_training_samples():
+    return record_training_samples()
+
+
+@router.post("/advisor/training_samples/update_targets")
+def post_update_training_targets():
+    return update_training_targets()
+
+
+@router.get("/advisor/training_samples")
+def get_advisor_training_samples(limit: int = 200, symbol: str | None = None):
+    return get_training_samples(limit=limit, symbol=symbol)

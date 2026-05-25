@@ -12,3 +12,4 @@ data/*
 !data/trade_deals.json
 !data/advisor_state.json
 !data/advisor_symbol_meta.json
+!data/advisor_training_samples.json
