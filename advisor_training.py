@@ -216,6 +216,39 @@ def insider_features(position):
     }
 
 
+def price_structure_features(position):
+    structure = position.get("price_structure") or {}
+    return {
+        "price_structure_score": safe_float(structure.get("score"), None),
+        "price_structure_recent_high_20": safe_float(structure.get("recent_high_20"), None),
+        "price_structure_recent_low_20": safe_float(structure.get("recent_low_20"), None),
+        "price_structure_range_20": safe_float(structure.get("range_20"), None),
+        "price_structure_range_60": safe_float(structure.get("range_60"), None),
+        "price_structure_volume_expansion": bool(structure.get("volume_expansion")),
+        "price_structure_swing_low_count": len(structure.get("swing_lows") or []),
+        "price_structure_swing_high_count": len(structure.get("swing_highs") or []),
+    }
+
+
+def personality_features(position):
+    personality = position.get("profile", {}).get("personality") or {}
+    return {
+        "personality_speculative": bool(personality.get("speculative")),
+        "personality_short_squeeze_sensitive": bool(personality.get("short_squeeze_sensitive")),
+        "personality_rsi_hot_threshold": safe_float(personality.get("rsi_hot_threshold"), None),
+        "personality_max_buy_percent": safe_float(personality.get("max_buy_percent"), None),
+        "personality_trim_bias": safe_float(personality.get("trim_bias"), None),
+    }
+
+
+def score_breakdown_features(position):
+    breakdown = position.get("score_breakdown") or {}
+    return {
+        f"score_{key}": safe_float(value, None)
+        for key, value in breakdown.items()
+    }
+
+
 def build_feature_row(report, position):
     daily = position.get("signals", {}).get("daily", {})
     weekly = position.get("signals", {}).get("weekly", {})
@@ -252,10 +285,14 @@ def build_feature_row(report, position):
         "volatility_60d": safe_float(daily.get("volatility_60d")),
         "weekly_boll_position": safe_float(weekly.get("boll_position")),
         "monthly_ma20": safe_float(monthly.get("ma20")),
+        "trend_5d": safe_float(position.get("prediction", {}).get("trend_5d")),
         "trend_20d": safe_float(position.get("prediction", {}).get("trend_20d")),
         "trend_60d": safe_float(position.get("prediction", {}).get("trend_60d")),
         "expected_volatility_30d": safe_float(position.get("prediction", {}).get("expected_volatility_30d")),
         "drawdown_from_high": safe_float(position.get("prediction", {}).get("drawdown_from_high")),
+        **price_structure_features(position),
+        **personality_features(position),
+        **score_breakdown_features(position),
         **valuation_features(position),
         **financial_features(position),
         **earnings_features(position),
@@ -296,6 +333,47 @@ def build_feature_row(report, position):
             "reason": reason,
         })
 
+    price_structure = position.get("price_structure") or {}
+    if price_structure:
+        signals.append({
+            "name": "price_structure_status",
+            "value": price_structure.get("status"),
+            "direction": price_structure.get("status"),
+            "confidence": None,
+            "source": "price_action",
+            "reason": "裸K结构状态",
+        })
+        for point in price_structure.get("points", []) or []:
+            signals.append({
+                "name": "price_structure_point",
+                "value": point,
+                "direction": "informational",
+                "confidence": None,
+                "source": "price_action",
+                "reason": point,
+            })
+
+    personality = position.get("profile", {}).get("personality") or {}
+    if personality:
+        signals.append({
+            "name": "personality_type",
+            "value": personality.get("type"),
+            "direction": personality.get("type"),
+            "confidence": None,
+            "source": "advisor_profile",
+            "reason": personality.get("strategy_note"),
+        })
+
+    for point in position.get("analysis_points", []) or []:
+        signals.append({
+            "name": f"analysis_{point.get('category', 'unknown')}_{point.get('label', 'point')}",
+            "value": point.get("status"),
+            "direction": point.get("status"),
+            "confidence": None,
+            "source": point.get("category"),
+            "reason": point.get("detail"),
+        })
+
     return features, signals
 
 
@@ -317,6 +395,8 @@ def make_sample(report, position, horizons=None):
             "risk_tier": position.get("profile", {}).get("risk_tier"),
             "size_tier": position.get("profile", {}).get("size_tier"),
             "volatility_tier": position.get("profile", {}).get("volatility_tier"),
+            "personality_type": position.get("profile", {}).get("personality", {}).get("type"),
+            "price_structure_status": position.get("price_structure", {}).get("status"),
         },
         "signals": signals,
         "prediction": {

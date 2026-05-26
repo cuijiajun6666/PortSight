@@ -181,6 +181,7 @@ def add_indicators(frame):
     data["ma60"] = close.rolling(60).mean()
     data["ma120"] = close.rolling(120).mean()
     data["ret_1d"] = close.pct_change()
+    data["ret_5d"] = close.pct_change(5)
     data["ret_20d"] = close.pct_change(20)
     data["ret_60d"] = close.pct_change(60)
     data["volatility_20d"] = data["ret_1d"].rolling(20).std() * math.sqrt(252)
@@ -1334,6 +1335,7 @@ def score_position(
     vol60 = safe_float(latest.get("volatility_60d"))
     vol_tier = volatility_tier(vol60)
     drawdown = abs(safe_float(latest.get("drawdown")))
+    ret5 = safe_float(latest.get("ret_5d"))
     ret20 = safe_float(latest.get("ret_20d"))
     ret60 = safe_float(latest.get("ret_60d"))
     atr14 = safe_float(latest.get("atr14"))
@@ -1633,6 +1635,7 @@ def score_position(
         "suggestion": suggestion,
         "prediction": {
             "expected_volatility_30d": round(vol60 / math.sqrt(252) * math.sqrt(30), 4) if vol60 else 0,
+            "trend_5d": round(ret5, 4),
             "trend_20d": round(ret20, 4),
             "trend_60d": round(ret60, 4),
             "drawdown_from_high": round(drawdown, 4),
@@ -1652,6 +1655,7 @@ def score_position(
                 "boll_lower": round(boll_lower, 4),
                 "volatility_60d": round(vol60, 4),
                 "volatility_tier": vol_tier,
+                "ret_5d": round(ret5, 4),
             },
             "weekly": {
                 "boll_position": round(safe_float(latest_week.get("boll_position"), 0.5), 4),
