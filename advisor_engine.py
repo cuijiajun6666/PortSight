@@ -862,6 +862,176 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
     }
 
 
+def price_scale_guard(position, kline_close):
+    qty = safe_float(position.get("qty"))
+    market_val = safe_float(position.get("market_val"))
+    position_price = market_val / qty if qty > 0 else 0
+    if position_price <= 0 or kline_close <= 0:
+        return {
+            "ok": True,
+            "position_price": position_price,
+            "ratio": None,
+            "reason": None,
+        }
+    ratio = max(position_price, kline_close) / min(position_price, kline_close)
+    if ratio >= 3:
+        return {
+            "ok": False,
+            "position_price": position_price,
+            "ratio": round(ratio, 4),
+            "reason": "持仓真实单价与日K价格差异过大，可能是复权/拆股/币种口径不一致，已禁止生成交易触发价",
+        }
+    return {
+        "ok": True,
+        "position_price": position_price,
+        "ratio": round(ratio, 4),
+        "reason": None,
+    }
+
+
+def make_analysis_points(
+    *,
+    close,
+    ma5,
+    ma20,
+    ma60,
+    rsi,
+    macd,
+    macd_signal,
+    macd_hist,
+    prev_macd_hist,
+    vol60,
+    ret20,
+    ret60,
+    atr14,
+    boll_mid,
+    boll_upper,
+    boll_lower,
+    capital_flow,
+    capital_distribution,
+    daily_short_volume,
+    short_interest,
+    shareholders_changes,
+    insider_trades,
+    financials,
+    earnings,
+):
+    points = []
+    ma_stack = "bullish" if ma5 > ma20 > ma60 > 0 else "bearish" if ma5 < ma20 < ma60 and ma60 > 0 else "mixed"
+    points.append({
+        "category": "technical",
+        "label": "均线结构",
+        "status": ma_stack,
+        "detail": f"MA5={ma5:.4f}, MA20={ma20:.4f}, MA60={ma60:.4f}",
+    })
+
+    if macd > macd_signal and macd_hist > 0:
+        macd_status = "bullish"
+        macd_detail = "MACD在信号线上方，柱体为正"
+    elif macd < macd_signal and macd_hist < 0:
+        macd_status = "bearish"
+        macd_detail = "MACD在信号线下方，柱体为负"
+    else:
+        macd_status = "mixed"
+        macd_detail = "MACD未形成明确方向"
+    if macd_hist > prev_macd_hist:
+        macd_detail += "，柱体改善"
+    elif macd_hist < prev_macd_hist:
+        macd_detail += "，柱体走弱"
+    points.append({
+        "category": "technical",
+        "label": "MACD",
+        "status": macd_status,
+        "detail": macd_detail,
+    })
+
+    rsi_status = "overheated" if rsi >= 75 else "weak" if rsi <= 35 else "healthy" if 45 <= rsi <= 68 else "neutral"
+    points.append({
+        "category": "technical",
+        "label": "RSI",
+        "status": rsi_status,
+        "detail": f"RSI14={rsi:.2f}",
+    })
+
+    boll_status = "breakout_watch" if close > boll_upper > 0 else "support_watch" if close < boll_lower and boll_lower > 0 else "inside_band"
+    points.append({
+        "category": "technical",
+        "label": "布林带",
+        "status": boll_status,
+        "detail": f"中轨={boll_mid:.4f}, 上轨={boll_upper:.4f}, 下轨={boll_lower:.4f}",
+    })
+
+    points.append({
+        "category": "technical",
+        "label": "波动/趋势",
+        "status": volatility_tier(vol60),
+        "detail": f"20日涨跌={ret20:.2%}, 60日涨跌={ret60:.2%}, ATR14={atr14:.4f}",
+    })
+
+    flow = capital_flow_summary(capital_flow)
+    distribution = capital_distribution_summary(capital_distribution)
+    main_flow = safe_float(flow.get("main_in_flow_20"), None)
+    main_net = safe_float(distribution.get("main_net"), None)
+    if main_flow is not None or main_net is not None:
+        points.append({
+            "category": "capital",
+            "label": "资金流",
+            "status": "inflow" if (main_flow or 0) > 0 or (main_net or 0) > 0 else "outflow",
+            "detail": f"20期主力净流={main_flow}, 最新大单/特大单净额={main_net}",
+        })
+
+    short_volume = daily_short_volume_summary(daily_short_volume)
+    short_summary = short_interest_summary(short_interest)
+    latest_short = safe_float(short_volume.get("latest_short_percent"), None)
+    avg_short = safe_float(short_volume.get("avg_short_percent_20"), None)
+    days_to_cover = safe_float(short_summary.get("days_to_cover"), None)
+    if latest_short is not None or avg_short is not None or days_to_cover is not None:
+        points.append({
+            "category": "short",
+            "label": "卖空/空头",
+            "status": "high_pressure" if (latest_short or 0) >= 30 or (days_to_cover or 0) >= 3 else "normal",
+            "detail": f"最新卖空比例={latest_short}, 20期均值={avg_short}, 回补天数={days_to_cover}",
+        })
+
+    changes = shareholders_changes_summary(shareholders_changes)
+    net_holder_change = safe_float(changes.get("net_share_ratio_change"), None)
+    if net_holder_change is not None:
+        points.append({
+            "category": "holders",
+            "label": "主要股东变动",
+            "status": "accumulation" if net_holder_change > 0 else "distribution" if net_holder_change < 0 else "flat",
+            "detail": f"主要股东净变动比例={net_holder_change}",
+        })
+
+    insider = insider_trades_summary(insider_trades)
+    if insider and not insider.get("unsupported"):
+        points.append({
+            "category": "insider",
+            "label": "内部人交易",
+            "status": "buying" if safe_float(insider.get("net_trade_shares")) > 0 else "selling" if safe_float(insider.get("net_trade_shares")) < 0 else "neutral",
+            "detail": f"买入次数={insider.get('buy_count')}, 卖出次数={insider.get('sell_count')}, 净股数={insider.get('net_trade_shares')}",
+        })
+
+    fin = financial_summary(financials)
+    if fin:
+        points.append({
+            "category": "fundamental",
+            "label": "财务",
+            "status": "improving" if safe_float(fin.get("revenue_yoy"), 0) > 10 or safe_float(fin.get("net_income_yoy"), 0) > 20 else "watch",
+            "detail": f"收入同比={fin.get('revenue_yoy')}, 净利润同比={fin.get('net_income_yoy')}, 期间={fin.get('latest_period')}",
+        })
+
+    earn = earnings_summary(earnings)
+    if earn:
+        points.append({
+            "category": "earnings",
+            "label": "财报波动",
+            "status": "volatile" if safe_float(earn.get("avg_max_abs_move_5d")) >= 0.12 else "normal",
+            "detail": f"财报后5日平均收益={earn.get('avg_5d_return_after_earnings')}, 平均最大波动={earn.get('avg_max_abs_move_5d')}",
+        })
+    return points
+
+
 def score_position(
     position,
     daily_frame,
@@ -919,6 +1089,7 @@ def score_position(
     kline_date = str(latest.get("date", ""))
     kline_close = safe_float(latest.get("close"))
     close = kline_close
+    scale_guard = price_scale_guard(position, kline_close)
     ma5 = safe_float(latest.get("ma5"))
     ma20 = safe_float(latest.get("ma20"))
     ma60 = safe_float(latest.get("ma60"))
@@ -940,25 +1111,27 @@ def score_position(
 
     trend_score = 50
     reasons = []
+    if not scale_guard.get("ok"):
+        reasons.append(scale_guard.get("reason"))
     if not indicators_ok:
         reasons.append("MACD/均线/波动率等核心指标不足，暂不生成买卖触发价")
     if close > ma5 > 0:
         trend_score += 5
-        reasons.append("实时价站上5日均线")
+        reasons.append("日K收盘价站上5日均线")
     elif close < ma5 and ma5 > 0:
         trend_score -= 5
-        reasons.append("实时价低于5日均线")
+        reasons.append("日K收盘价低于5日均线")
     if close > ma20 > 0:
         trend_score += 10
-        reasons.append("实时价站上20日均线")
+        reasons.append("日K收盘价站上20日均线")
     if ma20 > ma60 > 0:
         trend_score += 12
         reasons.append("20日均线高于60日均线")
     if close < ma60 and ma60 > 0:
         trend_score -= 15
-        reasons.append("实时价仍低于60日均线")
+        reasons.append("日K收盘价仍低于60日均线")
     elif close > ma60 > 0:
-        reasons.append("实时价高于60日均线")
+        reasons.append("日K收盘价高于60日均线")
     if indicators_ok and macd > macd_signal and macd_hist > 0:
         trend_score += 8
         reasons.append("MACD位于信号线上方，短中期动能偏正")
@@ -1036,7 +1209,11 @@ def score_position(
     pl_ratio = safe_float(position.get("pl_ratio"))
     unrealized_pl = safe_float(position.get("unrealized_pl"))
     confirmed = indicators_ok
-    if not indicators_ok:
+    if not scale_guard.get("ok"):
+        action = "watch"
+        suggestion = "价格口径不一致，先观察并刷新不复权日K后再生成交易计划。"
+        confirmed = False
+    elif not indicators_ok:
         action = "watch"
         suggestion = "核心技术指标不足，先观察，不生成买卖触发价。"
         confirmed = False
@@ -1093,6 +1270,32 @@ def score_position(
         "boll_lower": boll_lower,
     }
     trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier, close, daily_frame, levels=levels, confirmed=confirmed)
+    analysis_points = make_analysis_points(
+        close=close,
+        ma5=ma5,
+        ma20=ma20,
+        ma60=ma60,
+        rsi=rsi,
+        macd=macd,
+        macd_signal=macd_signal,
+        macd_hist=macd_hist,
+        prev_macd_hist=prev_macd_hist,
+        vol60=vol60,
+        ret20=ret20,
+        ret60=ret60,
+        atr14=atr14,
+        boll_mid=boll_mid,
+        boll_upper=boll_upper,
+        boll_lower=boll_lower,
+        capital_flow=capital_flow,
+        capital_distribution=capital_distribution,
+        daily_short_volume=daily_short_volume,
+        short_interest=short_interest,
+        shareholders_changes=shareholders_changes,
+        insider_trades=insider_trades,
+        financials=financials,
+        earnings=earnings,
+    )
 
     return {
         "code": code,
@@ -1126,6 +1329,15 @@ def score_position(
         "kline_date": kline_date,
         "kline_close": kline_close,
         "price_source": "kline",
+        "data_quality": {
+            "ok": scale_guard.get("ok") and indicators_ok,
+            "price_scale_ok": scale_guard.get("ok"),
+            "indicator_ready": indicators_ok,
+            "position_price": scale_guard.get("position_price"),
+            "price_scale_ratio": scale_guard.get("ratio"),
+            "reason": scale_guard.get("reason"),
+            "kline_autype": "NONE",
+        },
         "realized_pl": safe_float(position.get("realized_pl")),
         "unrealized_pl": safe_float(position.get("unrealized_pl")),
         "pl_ratio": safe_float(position.get("pl_ratio")),
@@ -1166,6 +1378,7 @@ def score_position(
                 "ma20": round(safe_float(latest_month.get("ma20")), 4),
             },
         },
+        "analysis_points": analysis_points,
         "reasons": reasons[:8],
     }
 
@@ -1661,6 +1874,7 @@ def compact_position_advice(position):
         "trade_plan": position.get("trade_plan", {}),
         "suggestion": position.get("suggestion"),
         "reasons": position.get("reasons", []),
+        "analysis_points": position.get("analysis_points", []),
         "prediction": position.get("prediction", {}),
         "signals": position.get("signals", {}),
         "profile": {

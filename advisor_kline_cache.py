@@ -17,6 +17,8 @@ KLINE_QUOTA_FILE = DATA_DIR / "kline_quota_usage.json"
 DEFAULT_KLINE_START = os.getenv("ADVISOR_KLINE_START", "2023-01-01")
 KLINE_QUOTA_LIMIT = int(os.getenv("ADVISOR_KLINE_QUOTA_LIMIT", "1000"))
 KLINE_REQUEST_INTERVAL_SECONDS = float(os.getenv("ADVISOR_KLINE_REQUEST_INTERVAL_SECONDS", "0.55"))
+KLINE_AUTYPE = AuType.NONE
+KLINE_AUTYPE_NAME = "NONE"
 
 _cache_lock = threading.RLock()
 _rate_limit_lock = threading.RLock()
@@ -159,6 +161,8 @@ def normalize_kline_frame(data):
 def should_refresh(payload, force=False):
     if force:
         return True
+    if payload.get("autype") != KLINE_AUTYPE_NAME:
+        return True
     rows = payload.get("rows", [])
     if not rows:
         return True
@@ -185,7 +189,7 @@ def request_klines(code, start=None, end=None, period="day"):
                 start=start or DEFAULT_KLINE_START,
                 end=end,
                 ktype=kltype_for_period(period),
-                autype=AuType.QFQ,
+                autype=KLINE_AUTYPE,
                 max_count=1000,
                 page_req_key=page_req_key,
             )
@@ -222,6 +226,7 @@ def sync_klines(code, start=None, end=None, period="day", force=False):
         atomic_write_json(symbol_file(code, period=period), {
             "code": code,
             "period": period,
+            "autype": KLINE_AUTYPE_NAME,
             "fetched_at": utc_now_iso(),
             "start": start or DEFAULT_KLINE_START,
             "end": end,
