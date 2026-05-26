@@ -175,6 +175,7 @@ def add_indicators(frame):
     close = data["close"]
     high = data["high"]
     low = data["low"]
+    data["ma5"] = close.rolling(5).mean()
     data["ma20"] = close.rolling(20).mean()
     data["ma60"] = close.rolling(60).mean()
     data["ma120"] = close.rolling(120).mean()
@@ -215,7 +216,7 @@ def add_indicators(frame):
 
 
 def indicator_ready(latest):
-    required = ["ma20", "ma60", "rsi14", "macd", "macd_signal", "macd_hist", "volatility_60d", "ret_20d"]
+    required = ["ma5", "ma20", "ma60", "rsi14", "macd", "macd_signal", "macd_hist", "volatility_60d", "ret_20d"]
     return all(pd.notna(latest.get(name)) for name in required)
 
 
@@ -753,7 +754,17 @@ def insider_risk_adjustment(insider_trades, insider_holders):
     return adjustment, reasons
 
 
-def position_trade_plan(position, action, risk_score, technical_score, weight, volatility_tier, close, daily_frame, confirmed=False):
+def nearest_above(values, current):
+    candidates = sorted(value for value in values if value and value > current)
+    return candidates[0] if candidates else 0
+
+
+def nearest_below(values, current):
+    candidates = sorted((value for value in values if value and value < current), reverse=True)
+    return candidates[0] if candidates else 0
+
+
+def position_trade_plan(position, action, risk_score, technical_score, weight, volatility_tier, close, daily_frame, levels=None, confirmed=False):
     qty = safe_float(position.get("qty"))
     unrealized_pl = safe_float(position.get("unrealized_pl"))
     pl_ratio = safe_float(position.get("pl_ratio"))
@@ -764,9 +775,24 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
     trigger_condition = None
     recent_high = 0
     recent_low = 0
+    levels = levels or {}
     if not daily_frame.empty:
         recent_high = safe_float(daily_frame.tail(20)["high"].max())
         recent_low = safe_float(daily_frame.tail(20)["low"].min())
+    resistance_levels = [
+        recent_high,
+        safe_float(levels.get("boll_upper")),
+        close + safe_float(levels.get("atr14")),
+        close * 1.03 if close > 0 else 0,
+    ]
+    support_levels = [
+        safe_float(levels.get("ma5")),
+        safe_float(levels.get("ma20")),
+        safe_float(levels.get("ma60")),
+        safe_float(levels.get("boll_mid")),
+        recent_low,
+        close - safe_float(levels.get("atr14")),
+    ]
 
     if not confirmed:
         return {
@@ -792,9 +818,9 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
         if pl_ratio > 0.35 or unrealized_pl > 0:
             sell_pct += 5
         alert_type = "sell"
-        target = close * 1.03 if close > 0 else 0
-        if recent_high > 0:
-            target = max(target, min(recent_high * 0.995, close * 1.08))
+        target = nearest_above(resistance_levels, close)
+        if not target and close > 0:
+            target = close * 1.03
         trigger_price = round(target, 4) if target > 0 else None
         trigger_condition = "price_at_or_above"
     elif action == "reduce_or_watch":
@@ -804,9 +830,9 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
         if technical_score < 35:
             sell_pct += 5
         alert_type = "sell"
-        target = close * 1.01 if close > 0 else 0
-        if recent_low > 0 and close > recent_low * 1.08:
-            target = max(target, close * 1.02)
+        target = nearest_above([safe_float(levels.get("ma5")), safe_float(levels.get("ma20")), close * 1.015], close)
+        if not target and close > 0:
+            target = close * 1.015
         trigger_price = round(target, 4) if target > 0 else None
         trigger_condition = "price_at_or_above"
     elif action == "add_candidate":
@@ -816,9 +842,9 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
         if volatility_tier in ("high", "extreme"):
             buy_pct = max(5, buy_pct - 5)
         alert_type = "buy"
-        target = close * 0.985 if close > 0 else 0
-        if recent_low > 0:
-            target = max(recent_low * 1.01, min(target, close))
+        target = nearest_below(support_levels, close)
+        if not target and close > 0:
+            target = close * 0.985
         trigger_price = round(target, 4) if target > 0 else None
         trigger_condition = "price_at_or_below"
 
@@ -856,7 +882,6 @@ def score_position(
     shareholders_changes=None,
     insider_trades=None,
     insider_holders=None,
-    live_quote=None,
 ):
     code = position.get("code", "")
     plates = plates or []
@@ -891,11 +916,10 @@ def score_position(
     latest_week = weekly.iloc[-1] if not weekly.empty else latest
     latest_month = monthly.iloc[-1] if not monthly.empty else latest
     indicators_ok = indicator_ready(latest)
+    kline_date = str(latest.get("date", ""))
     kline_close = safe_float(latest.get("close"))
-    live_quote = live_quote or {}
-    live_price = safe_float(live_quote.get("price"))
-    position_price = market_val / safe_float(position.get("qty")) if safe_float(position.get("qty")) > 0 else 0
-    close = live_price if live_price > 0 else position_price if position_price > 0 else kline_close
+    close = kline_close
+    ma5 = safe_float(latest.get("ma5"))
     ma20 = safe_float(latest.get("ma20"))
     ma60 = safe_float(latest.get("ma60"))
     rsi = safe_float(latest.get("rsi14"), 50)
@@ -908,25 +932,33 @@ def score_position(
     drawdown = abs(safe_float(latest.get("drawdown")))
     ret20 = safe_float(latest.get("ret_20d"))
     ret60 = safe_float(latest.get("ret_60d"))
+    atr14 = safe_float(latest.get("atr14"))
+    boll_mid = safe_float(latest.get("boll_mid"))
+    boll_upper = safe_float(latest.get("boll_upper"))
+    boll_lower = safe_float(latest.get("boll_lower"))
     boll_position = safe_float(latest_week.get("boll_position"), 0.5)
 
     trend_score = 50
     reasons = []
     if not indicators_ok:
         reasons.append("MACD/均线/波动率等核心指标不足，暂不生成买卖触发价")
-    price_divergence = abs(close / kline_close - 1) if close > 0 and kline_close > 0 else 0
-    if price_divergence >= 0.20:
-        reasons.append("实时价与K线缓存收盘价偏离较大，触发价已优先按实时价校准")
-
+    if close > ma5 > 0:
+        trend_score += 5
+        reasons.append("实时价站上5日均线")
+    elif close < ma5 and ma5 > 0:
+        trend_score -= 5
+        reasons.append("实时价低于5日均线")
     if close > ma20 > 0:
         trend_score += 10
-        reasons.append("日线价格站上20日均线")
+        reasons.append("实时价站上20日均线")
     if ma20 > ma60 > 0:
         trend_score += 12
         reasons.append("20日均线高于60日均线")
     if close < ma60 and ma60 > 0:
         trend_score -= 15
-        reasons.append("价格仍低于60日均线")
+        reasons.append("实时价仍低于60日均线")
+    elif close > ma60 > 0:
+        reasons.append("实时价高于60日均线")
     if indicators_ok and macd > macd_signal and macd_hist > 0:
         trend_score += 8
         reasons.append("MACD位于信号线上方，短中期动能偏正")
@@ -1051,7 +1083,16 @@ def score_position(
     reasons.extend(short_reasons)
     reasons.extend(shareholders_reasons)
     reasons.extend(insider_reasons)
-    trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier, close, daily_frame, confirmed=confirmed)
+    levels = {
+        "ma5": ma5,
+        "ma20": ma20,
+        "ma60": ma60,
+        "atr14": atr14,
+        "boll_mid": boll_mid,
+        "boll_upper": boll_upper,
+        "boll_lower": boll_lower,
+    }
+    trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier, close, daily_frame, levels=levels, confirmed=confirmed)
 
     return {
         "code": code,
@@ -1082,10 +1123,9 @@ def score_position(
         "cost_price": safe_float(position.get("cost_price")),
         "market_val": market_val,
         "close": close,
+        "kline_date": kline_date,
         "kline_close": kline_close,
-        "live_price": live_price,
-        "price_source": "live_quote" if live_price > 0 else "position_market_val" if position_price > 0 else "kline",
-        "price_divergence_from_kline": round(price_divergence, 4),
+        "price_source": "kline",
         "realized_pl": safe_float(position.get("realized_pl")),
         "unrealized_pl": safe_float(position.get("unrealized_pl")),
         "pl_ratio": safe_float(position.get("pl_ratio")),
@@ -1103,12 +1143,17 @@ def score_position(
         },
         "signals": {
             "daily": {
+                "ma5": round(ma5, 4),
                 "ma20": round(ma20, 4),
                 "ma60": round(ma60, 4),
                 "rsi14": round(rsi, 2),
                 "macd": round(macd, 4),
                 "macd_signal": round(macd_signal, 4),
                 "macd_hist": round(macd_hist, 4),
+                "atr14": round(atr14, 4),
+                "boll_mid": round(boll_mid, 4),
+                "boll_upper": round(boll_upper, 4),
+                "boll_lower": round(boll_lower, 4),
                 "volatility_60d": round(vol60, 4),
                 "volatility_tier": vol_tier,
             },
@@ -1283,6 +1328,11 @@ def fetch_live_quotes(codes):
         quotes[code] = {
             "code": code,
             "price": price,
+            "open": safe_float(row.get("open_price")),
+            "high": safe_float(row.get("high_price")),
+            "low": safe_float(row.get("low_price")),
+            "volume": safe_float(row.get("volume")),
+            "turnover": safe_float(row.get("turnover")),
             "data_date": str(row.get("data_date", "")),
             "data_time": str(row.get("data_time", "")),
         }
@@ -1507,10 +1557,6 @@ def build_advisor_report(force_sync=False):
         insider_holders = get_insider_holders(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
-    try:
-        live_quotes = fetch_live_quotes([item.get("code") for item in positions if item.get("code")])
-    except Exception:
-        live_quotes = {}
     reports = []
     for position in positions:
         code = position.get("code")
@@ -1540,7 +1586,6 @@ def build_advisor_report(force_sync=False):
             shareholders_changes=shareholders_changes.get(code),
             insider_trades=insider_trades.get(code),
             insider_holders=insider_holders.get(code),
-            live_quote=live_quotes.get(code),
         ))
 
     exposure = portfolio_exposure(reports)
@@ -1603,10 +1648,9 @@ def compact_position_advice(position):
         "cost_price": position.get("cost_price"),
         "market_val": position.get("market_val"),
         "close": position.get("close"),
+        "kline_date": position.get("kline_date"),
         "kline_close": position.get("kline_close"),
-        "live_price": position.get("live_price"),
         "price_source": position.get("price_source"),
-        "price_divergence_from_kline": position.get("price_divergence_from_kline"),
         "realized_pl": position.get("realized_pl"),
         "unrealized_pl": position.get("unrealized_pl"),
         "pl_ratio": position.get("pl_ratio"),
@@ -1738,10 +1782,6 @@ def build_candidate_advice(code, force_sync=False):
         frame = get_daily_klines(code)
     except Exception:
         frame = pd.DataFrame()
-    try:
-        live_quote = fetch_live_quotes([code]).get(code)
-    except Exception:
-        live_quote = None
 
     owner_plates = get_owner_plates([code]).get(code, [])
     fake_position = {
@@ -1771,7 +1811,6 @@ def build_candidate_advice(code, force_sync=False):
         shareholders_changes=get_shareholders_changes([code]).get(code),
         insider_trades=get_insider_trades([code]).get(code),
         insider_holders=get_insider_holders([code]).get(code),
-        live_quote=live_quote,
     )
     action = advice.get("action")
     signal = "watch"
