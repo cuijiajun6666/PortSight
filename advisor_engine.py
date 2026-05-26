@@ -194,6 +194,7 @@ def add_indicators(frame):
     ema26 = close.ewm(span=26, adjust=False).mean()
     data["macd"] = ema12 - ema26
     data["macd_signal"] = data["macd"].ewm(span=9, adjust=False).mean()
+    data["macd_hist"] = data["macd"] - data["macd_signal"]
 
     mid = close.rolling(20).mean()
     std = close.rolling(20).std()
@@ -211,6 +212,11 @@ def add_indicators(frame):
     data["atr14"] = true_range.rolling(14).mean()
     data["drawdown"] = close / close.cummax() - 1
     return data
+
+
+def indicator_ready(latest):
+    required = ["ma20", "ma60", "rsi14", "macd", "macd_signal", "macd_hist", "volatility_60d", "ret_20d"]
+    return all(pd.notna(latest.get(name)) for name in required)
 
 
 def aggregate_period(frame, freq):
@@ -747,7 +753,7 @@ def insider_risk_adjustment(insider_trades, insider_holders):
     return adjustment, reasons
 
 
-def position_trade_plan(position, action, risk_score, technical_score, weight, volatility_tier, close, daily_frame):
+def position_trade_plan(position, action, risk_score, technical_score, weight, volatility_tier, close, daily_frame, confirmed=False):
     qty = safe_float(position.get("qty"))
     unrealized_pl = safe_float(position.get("unrealized_pl"))
     pl_ratio = safe_float(position.get("pl_ratio"))
@@ -761,6 +767,17 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
     if not daily_frame.empty:
         recent_high = safe_float(daily_frame.tail(20)["high"].max())
         recent_low = safe_float(daily_frame.tail(20)["low"].min())
+
+    if not confirmed:
+        return {
+            "alert_type": None,
+            "buy_percent": 0,
+            "sell_percent": 0,
+            "sell_qty": 0,
+            "trigger_price": None,
+            "trigger_condition": None,
+            "basis": "核心技术指标未确认，暂不生成买卖触发价",
+        }
 
     if action == "trim":
         sell_pct = 20
@@ -839,6 +856,7 @@ def score_position(
     shareholders_changes=None,
     insider_trades=None,
     insider_holders=None,
+    live_quote=None,
 ):
     code = position.get("code", "")
     plates = plates or []
@@ -872,10 +890,19 @@ def score_position(
     latest = indicators.iloc[-1]
     latest_week = weekly.iloc[-1] if not weekly.empty else latest
     latest_month = monthly.iloc[-1] if not monthly.empty else latest
-    close = safe_float(latest.get("close"))
+    indicators_ok = indicator_ready(latest)
+    kline_close = safe_float(latest.get("close"))
+    live_quote = live_quote or {}
+    live_price = safe_float(live_quote.get("price"))
+    position_price = market_val / safe_float(position.get("qty")) if safe_float(position.get("qty")) > 0 else 0
+    close = live_price if live_price > 0 else position_price if position_price > 0 else kline_close
     ma20 = safe_float(latest.get("ma20"))
     ma60 = safe_float(latest.get("ma60"))
     rsi = safe_float(latest.get("rsi14"), 50)
+    macd = safe_float(latest.get("macd"))
+    macd_signal = safe_float(latest.get("macd_signal"))
+    macd_hist = safe_float(latest.get("macd_hist"))
+    prev_macd_hist = safe_float(indicators.iloc[-2].get("macd_hist")) if len(indicators) > 1 else 0
     vol60 = safe_float(latest.get("volatility_60d"))
     vol_tier = volatility_tier(vol60)
     drawdown = abs(safe_float(latest.get("drawdown")))
@@ -885,6 +912,12 @@ def score_position(
 
     trend_score = 50
     reasons = []
+    if not indicators_ok:
+        reasons.append("MACD/均线/波动率等核心指标不足，暂不生成买卖触发价")
+    price_divergence = abs(close / kline_close - 1) if close > 0 and kline_close > 0 else 0
+    if price_divergence >= 0.20:
+        reasons.append("实时价与K线缓存收盘价偏离较大，触发价已优先按实时价校准")
+
     if close > ma20 > 0:
         trend_score += 10
         reasons.append("日线价格站上20日均线")
@@ -894,6 +927,15 @@ def score_position(
     if close < ma60 and ma60 > 0:
         trend_score -= 15
         reasons.append("价格仍低于60日均线")
+    if indicators_ok and macd > macd_signal and macd_hist > 0:
+        trend_score += 8
+        reasons.append("MACD位于信号线上方，短中期动能偏正")
+    elif indicators_ok and macd < macd_signal and macd_hist < 0:
+        trend_score -= 10
+        reasons.append("MACD位于信号线下方，动能仍偏弱")
+    macd_improving = indicators_ok and macd_hist > prev_macd_hist
+    macd_bullish = indicators_ok and macd > macd_signal and macd_hist > 0
+    macd_bearish = indicators_ok and macd < macd_signal and macd_hist < 0
 
     momentum_score = 50 + max(-25, min(25, ret20 * 100)) + max(-15, min(15, ret60 * 50))
     if 45 <= rsi <= 68:
@@ -959,20 +1001,43 @@ def score_position(
 
     action = "hold"
     suggestion = "继续观察，等待趋势和风险信号进一步确认。"
-    if risk_score >= 70 and weight >= 0.15:
+    pl_ratio = safe_float(position.get("pl_ratio"))
+    unrealized_pl = safe_float(position.get("unrealized_pl"))
+    confirmed = indicators_ok
+    if not indicators_ok:
+        action = "watch"
+        suggestion = "核心技术指标不足，先观察，不生成买卖触发价。"
+        confirmed = False
+    elif risk_score >= 70 and weight >= 0.15 and (macd_bearish or rsi > 72 or pl_ratio > 0.20):
         action = "trim"
-        suggestion = "风险和仓位都偏高，可考虑分批减仓10%-30%，优先降低组合波动。"
-    elif technical_score >= 68 and risk_score < 55 and weight < 0.20:
+        suggestion = "风险和仓位都偏高，且动能/获利状态支持分批降低敞口。"
+        confirmed = True
+    elif pl_ratio >= 0.25 and risk_score >= 58 and (macd_bearish or rsi > 70):
+        action = "trim"
+        suggestion = "已有较明显浮盈且风险不低，可考虑到目标价后分批止盈。"
+        confirmed = True
+    elif pl_ratio <= -0.15 and technical_score >= 65 and risk_score < 60 and weight < 0.20 and macd_bullish:
+        action = "add_candidate"
+        suggestion = "持仓浮亏但技术面修复，可只在触发价附近小比例补仓，避免一次性摊平。"
+        confirmed = True
+    elif technical_score >= 68 and risk_score < 55 and weight < 0.20 and macd_bullish:
         action = "add_candidate"
         suggestion = "技术面较强且组合占比未过高，可列入加仓观察，不建议一次性重仓。"
-    elif technical_score >= 58 and risk_score < 70:
+        confirmed = True
+    elif technical_score >= 58 and risk_score < 70 and macd_improving:
         action = "hold"
         suggestion = "趋势尚可，当前以持有/观望为主。"
-    elif technical_score < 45:
+        confirmed = False
+    elif technical_score < 45 and macd_bearish:
         action = "reduce_or_watch"
         suggestion = "技术面偏弱，若反弹无量或跌破关键均线，应考虑降低仓位。"
+        confirmed = True
+    else:
+        action = "watch"
+        suggestion = "技术指标还没有形成足够确认，暂时观察，不给买卖触发价。"
+        confirmed = False
 
-    if safe_float(position.get("unrealized_pl")) > 0 and risk_score >= 60:
+    if unrealized_pl > 0 and risk_score >= 60:
         reasons.append("已有浮盈且风险分偏高，适合预设分批止盈计划")
     if size_tier == "small_cap":
         reasons.append("小盘/投机属性较强，更适合分批处理而不是一次性加仓")
@@ -986,7 +1051,7 @@ def score_position(
     reasons.extend(short_reasons)
     reasons.extend(shareholders_reasons)
     reasons.extend(insider_reasons)
-    trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier, close, daily_frame)
+    trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier, close, daily_frame, confirmed=confirmed)
 
     return {
         "code": code,
@@ -1017,12 +1082,17 @@ def score_position(
         "cost_price": safe_float(position.get("cost_price")),
         "market_val": market_val,
         "close": close,
+        "kline_close": kline_close,
+        "live_price": live_price,
+        "price_source": "live_quote" if live_price > 0 else "position_market_val" if position_price > 0 else "kline",
+        "price_divergence_from_kline": round(price_divergence, 4),
         "realized_pl": safe_float(position.get("realized_pl")),
         "unrealized_pl": safe_float(position.get("unrealized_pl")),
         "pl_ratio": safe_float(position.get("pl_ratio")),
         "risk_score": risk_score,
         "technical_score": technical_score,
         "action": action,
+        "confirmed": confirmed,
         "trade_plan": trade_plan,
         "suggestion": suggestion,
         "prediction": {
@@ -1036,6 +1106,9 @@ def score_position(
                 "ma20": round(ma20, 4),
                 "ma60": round(ma60, 4),
                 "rsi14": round(rsi, 2),
+                "macd": round(macd, 4),
+                "macd_signal": round(macd_signal, 4),
+                "macd_hist": round(macd_hist, 4),
                 "volatility_60d": round(vol60, 4),
                 "volatility_tier": vol_tier,
             },
@@ -1434,6 +1507,10 @@ def build_advisor_report(force_sync=False):
         insider_holders = get_insider_holders(codes, force=True)
 
     portfolio_value = sum(safe_float(item.get("market_val")) for item in positions)
+    try:
+        live_quotes = fetch_live_quotes([item.get("code") for item in positions if item.get("code")])
+    except Exception:
+        live_quotes = {}
     reports = []
     for position in positions:
         code = position.get("code")
@@ -1463,6 +1540,7 @@ def build_advisor_report(force_sync=False):
             shareholders_changes=shareholders_changes.get(code),
             insider_trades=insider_trades.get(code),
             insider_holders=insider_holders.get(code),
+            live_quote=live_quotes.get(code),
         ))
 
     exposure = portfolio_exposure(reports)
@@ -1525,12 +1603,17 @@ def compact_position_advice(position):
         "cost_price": position.get("cost_price"),
         "market_val": position.get("market_val"),
         "close": position.get("close"),
+        "kline_close": position.get("kline_close"),
+        "live_price": position.get("live_price"),
+        "price_source": position.get("price_source"),
+        "price_divergence_from_kline": position.get("price_divergence_from_kline"),
         "realized_pl": position.get("realized_pl"),
         "unrealized_pl": position.get("unrealized_pl"),
         "pl_ratio": position.get("pl_ratio"),
         "risk_score": position.get("risk_score"),
         "technical_score": position.get("technical_score"),
         "action": position.get("action"),
+        "confirmed": position.get("confirmed"),
         "trade_plan": position.get("trade_plan", {}),
         "suggestion": position.get("suggestion"),
         "reasons": position.get("reasons", []),
@@ -1655,6 +1738,10 @@ def build_candidate_advice(code, force_sync=False):
         frame = get_daily_klines(code)
     except Exception:
         frame = pd.DataFrame()
+    try:
+        live_quote = fetch_live_quotes([code]).get(code)
+    except Exception:
+        live_quote = None
 
     owner_plates = get_owner_plates([code]).get(code, [])
     fake_position = {
@@ -1684,6 +1771,7 @@ def build_candidate_advice(code, force_sync=False):
         shareholders_changes=get_shareholders_changes([code]).get(code),
         insider_trades=get_insider_trades([code]).get(code),
         insider_holders=get_insider_holders([code]).get(code),
+        live_quote=live_quote,
     )
     action = advice.get("action")
     signal = "watch"
