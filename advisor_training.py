@@ -10,6 +10,7 @@ from config import DATA_DIR
 
 
 TRAINING_SAMPLES_FILE = DATA_DIR / "advisor_training_samples.json"
+ADVISOR_MODEL_FILE = DATA_DIR / "advisor_model.json"
 DEFAULT_HORIZONS = [5, 20, 60]
 
 
@@ -231,11 +232,23 @@ def build_feature_row(report, position):
         "position_weight": safe_float(position.get("weight")),
         "market_val": safe_float(position.get("market_val")),
         "close": safe_float(position.get("close")),
+        "data_quality_ok": bool(position.get("data_quality", {}).get("ok")),
+        "price_scale_ok": bool(position.get("data_quality", {}).get("price_scale_ok")),
+        "price_scale_ratio": safe_float(position.get("data_quality", {}).get("price_scale_ratio"), None),
+        "position_price": safe_float(position.get("data_quality", {}).get("position_price"), None),
         "technical_score": safe_float(position.get("technical_score")),
         "risk_score": safe_float(position.get("risk_score")),
+        "ma5": safe_float(daily.get("ma5")),
         "ma20": safe_float(daily.get("ma20")),
         "ma60": safe_float(daily.get("ma60")),
         "rsi14": safe_float(daily.get("rsi14")),
+        "macd": safe_float(daily.get("macd")),
+        "macd_signal": safe_float(daily.get("macd_signal")),
+        "macd_hist": safe_float(daily.get("macd_hist")),
+        "atr14": safe_float(daily.get("atr14")),
+        "boll_mid": safe_float(daily.get("boll_mid")),
+        "boll_upper": safe_float(daily.get("boll_upper")),
+        "boll_lower": safe_float(daily.get("boll_lower")),
         "volatility_60d": safe_float(daily.get("volatility_60d")),
         "weekly_boll_position": safe_float(weekly.get("boll_position")),
         "monthly_ma20": safe_float(monthly.get("ma20")),
@@ -338,6 +351,8 @@ def record_training_samples(report=None, horizons=None):
         symbol = position.get("code")
         if not symbol:
             continue
+        if not position.get("data_quality", {}).get("ok", True):
+            continue
         sample = make_sample(report, position, horizons=horizons)
         existing = samples_by_id.get(sample["id"])
         if existing:
@@ -432,3 +447,90 @@ def get_training_samples(limit=200, symbol=None):
         "count": len(samples),
         "samples": samples,
     }
+
+
+def pearson(xs, ys):
+    pairs = [
+        (float(x), float(y))
+        for x, y in zip(xs, ys)
+        if x is not None and y is not None
+    ]
+    if len(pairs) < 3:
+        return None
+    x_values = [item[0] for item in pairs]
+    y_values = [item[1] for item in pairs]
+    x_mean = sum(x_values) / len(x_values)
+    y_mean = sum(y_values) / len(y_values)
+    numerator = sum((x - x_mean) * (y - y_mean) for x, y in pairs)
+    x_var = sum((x - x_mean) ** 2 for x in x_values)
+    y_var = sum((y - y_mean) ** 2 for y in y_values)
+    if x_var <= 0 or y_var <= 0:
+        return None
+    return numerator / ((x_var ** 0.5) * (y_var ** 0.5))
+
+
+def train_advisor_model(horizon=20, min_samples=8):
+    payload = load_training_samples()
+    rows = []
+    for sample in payload.get("samples", []):
+        features = sample.get("features", {})
+        if features.get("data_quality_ok") is False:
+            continue
+        target = (sample.get("targets", {}) or {}).get(str(horizon))
+        if not target:
+            continue
+        actual_return = safe_float(target.get("actual_return"), None)
+        max_drawdown = safe_float(target.get("actual_max_drawdown"), None)
+        if actual_return is None:
+            continue
+        rows.append({
+            "sample": sample,
+            "features": features,
+            "actual_return": actual_return,
+            "max_drawdown": max_drawdown,
+        })
+
+    numeric_keys = sorted({
+        key
+        for row in rows
+        for key, value in row["features"].items()
+        if isinstance(value, (int, float)) and value is not None and not isinstance(value, bool)
+    })
+    factors = []
+    for key in numeric_keys:
+        xs = [row["features"].get(key) for row in rows]
+        returns = [row["actual_return"] for row in rows]
+        drawdowns = [row["max_drawdown"] for row in rows]
+        return_corr = pearson(xs, returns)
+        drawdown_corr = pearson(xs, drawdowns)
+        if return_corr is None and drawdown_corr is None:
+            continue
+        factors.append({
+            "feature": key,
+            "return_corr": None if return_corr is None else round(return_corr, 6),
+            "drawdown_corr": None if drawdown_corr is None else round(drawdown_corr, 6),
+            "importance": round(max(abs(return_corr or 0), abs(drawdown_corr or 0)), 6),
+        })
+
+    factors.sort(key=lambda item: item["importance"], reverse=True)
+    model = {
+        "ok": len(rows) >= min_samples,
+        "updated_at": utc_now_iso(),
+        "schema_version": 1,
+        "type": "factor_correlation_v1",
+        "horizon": horizon,
+        "min_samples": min_samples,
+        "sample_count": len(rows),
+        "usable": len(rows) >= min_samples,
+        "note": "This first model ranks which recorded features have historically aligned with future returns/drawdowns. It is intentionally not used for trading until enough clean samples exist.",
+        "top_factors": factors[:30],
+    }
+    write_json(ADVISOR_MODEL_FILE, model)
+    return model
+
+
+def get_advisor_model():
+    return read_json(ADVISOR_MODEL_FILE, {
+        "ok": False,
+        "error": "advisor model has not been trained yet",
+    })

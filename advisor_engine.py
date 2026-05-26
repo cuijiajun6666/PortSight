@@ -1722,6 +1722,130 @@ def sync_advisor_profiles(force=False):
     }
 
 
+def get_positions_indicator_debug(force_sync=False):
+    positions_result = get_positions()
+    if not positions_result.get("ok"):
+        return positions_result
+
+    results = []
+    for position in positions_result.get("positions", []):
+        code = position.get("code")
+        if not code:
+            continue
+        if force_sync:
+            try:
+                sync_daily_klines(code, force=True)
+            except Exception as exc:
+                results.append({
+                    "ok": False,
+                    "code": code,
+                    "name": position.get("name"),
+                    "error": f"sync_daily_klines failed: {exc}",
+                })
+                continue
+
+        try:
+            frame = get_daily_klines(code)
+        except Exception as exc:
+            results.append({
+                "ok": False,
+                "code": code,
+                "name": position.get("name"),
+                "error": f"get_daily_klines failed: {exc}",
+            })
+            continue
+
+        if frame.empty:
+            results.append({
+                "ok": False,
+                "code": code,
+                "name": position.get("name"),
+                "error": "daily kline cache is empty",
+            })
+            continue
+
+        indicators = add_indicators(frame)
+        latest = indicators.iloc[-1]
+        previous = indicators.iloc[-2] if len(indicators) > 1 else latest
+        qty = safe_float(position.get("qty"))
+        market_val = safe_float(position.get("market_val"))
+        position_price = market_val / qty if qty > 0 else 0
+        kline_close = safe_float(latest.get("close"))
+        scale_guard = price_scale_guard(position, kline_close)
+
+        results.append({
+            "ok": True,
+            "code": code,
+            "name": position.get("name"),
+            "rows": len(frame),
+            "expected_kline_autype": "NONE",
+            "position": {
+                "qty": qty,
+                "market_val": market_val,
+                "cost_price": safe_float(position.get("cost_price")),
+                "position_price": position_price,
+                "unrealized_pl": safe_float(position.get("unrealized_pl")),
+                "pl_ratio": safe_float(position.get("pl_ratio")),
+            },
+            "data_quality": {
+                "price_scale_ok": scale_guard.get("ok"),
+                "price_scale_ratio": scale_guard.get("ratio"),
+                "reason": scale_guard.get("reason"),
+            },
+            "latest_kline": {
+                "date": str(latest.get("date", "")),
+                "open": safe_float(latest.get("open")),
+                "high": safe_float(latest.get("high")),
+                "low": safe_float(latest.get("low")),
+                "close": kline_close,
+                "volume": safe_float(latest.get("volume")),
+                "turnover": safe_float(latest.get("turnover")),
+            },
+            "previous_kline": {
+                "date": str(previous.get("date", "")),
+                "close": safe_float(previous.get("close")),
+                "macd_hist": safe_float(previous.get("macd_hist")),
+            },
+            "indicators": {
+                "ma5": safe_float(latest.get("ma5"), None),
+                "ma20": safe_float(latest.get("ma20"), None),
+                "ma60": safe_float(latest.get("ma60"), None),
+                "ma120": safe_float(latest.get("ma120"), None),
+                "rsi14": safe_float(latest.get("rsi14"), None),
+                "macd": safe_float(latest.get("macd"), None),
+                "macd_signal": safe_float(latest.get("macd_signal"), None),
+                "macd_hist": safe_float(latest.get("macd_hist"), None),
+                "macd_hist_previous": safe_float(previous.get("macd_hist"), None),
+                "atr14": safe_float(latest.get("atr14"), None),
+                "boll_mid": safe_float(latest.get("boll_mid"), None),
+                "boll_upper": safe_float(latest.get("boll_upper"), None),
+                "boll_lower": safe_float(latest.get("boll_lower"), None),
+                "boll_position": safe_float(latest.get("boll_position"), None),
+                "ret_1d": safe_float(latest.get("ret_1d"), None),
+                "ret_20d": safe_float(latest.get("ret_20d"), None),
+                "ret_60d": safe_float(latest.get("ret_60d"), None),
+                "volatility_20d": safe_float(latest.get("volatility_20d"), None),
+                "volatility_60d": safe_float(latest.get("volatility_60d"), None),
+                "drawdown": safe_float(latest.get("drawdown"), None),
+            },
+            "checks": {
+                "close_above_ma5": kline_close > safe_float(latest.get("ma5")) > 0,
+                "close_above_ma20": kline_close > safe_float(latest.get("ma20")) > 0,
+                "close_above_ma60": kline_close > safe_float(latest.get("ma60")) > 0,
+                "ma5_gt_ma20": safe_float(latest.get("ma5")) > safe_float(latest.get("ma20")) > 0,
+                "ma20_gt_ma60": safe_float(latest.get("ma20")) > safe_float(latest.get("ma60")) > 0,
+                "macd_above_signal": safe_float(latest.get("macd")) > safe_float(latest.get("macd_signal")),
+                "macd_hist_improving": safe_float(latest.get("macd_hist")) > safe_float(previous.get("macd_hist")),
+            },
+        })
+
+    return {
+        "ok": True,
+        "count": len(results),
+        "positions": results,
+    }
+
+
 def build_advisor_report(force_sync=False):
     state = load_advisor_state()
     meta = load_symbol_meta()

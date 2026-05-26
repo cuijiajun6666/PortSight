@@ -6,6 +6,7 @@ from advisor_engine import (
     build_advisor_report,
     build_candidate_advice,
     get_advisor_summary,
+    get_positions_indicator_debug,
     get_symbol_advice,
     get_watch_alerts,
     load_advisor_state,
@@ -18,8 +19,10 @@ from advisor_engine import (
     update_watch_symbol,
 )
 from advisor_training import (
+    get_advisor_model,
     get_training_samples,
     record_training_samples,
+    train_advisor_model,
     update_training_targets,
 )
 
@@ -63,6 +66,11 @@ def get_advisor_suggestions(refresh: bool = False):
 @router.get("/advisor/summary")
 def get_summary(refresh: bool = False):
     return get_advisor_summary(refresh=refresh)
+
+
+@router.get("/advisor/debug/indicators")
+def get_advisor_indicator_debug(force_sync: bool = False):
+    return get_positions_indicator_debug(force_sync=force_sync)
 
 
 @router.get("/advisor/symbol")
@@ -128,3 +136,13 @@ def post_update_training_targets():
 @router.get("/advisor/training_samples")
 def get_advisor_training_samples(limit: int = 200, symbol: str | None = None):
     return get_training_samples(limit=limit, symbol=symbol)
+
+
+@router.post("/advisor/model/train")
+def post_train_advisor_model(horizon: int = 20, min_samples: int = 8):
+    return train_advisor_model(horizon=horizon, min_samples=min_samples)
+
+
+@router.get("/advisor/model")
+def get_model():
+    return get_advisor_model()

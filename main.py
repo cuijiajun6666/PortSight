@@ -14,7 +14,7 @@ from routes.advisor import router as advisor_router
 from market_rt_data import sync_market_intraday_cache
 from deal_cache import start_deal_push_listener, stop_deal_push_listener
 from advisor_engine import build_advisor_report, monitor_advisor_price_alerts, refresh_watchlist, sync_advisor_klines, sync_advisor_profiles
-from advisor_training import record_training_samples, update_training_targets
+from advisor_training import record_training_samples, train_advisor_model, update_training_targets
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -81,6 +81,7 @@ def refresh_advisor_after_close():
         watch_result = refresh_watchlist()
         sample_result = record_training_samples(report)
         target_result = update_training_targets()
+        model_result = train_advisor_model()
         print(
             "智能持仓建议已刷新: "
             f"{sync_result.get('count', 0)} K线任务, "
@@ -88,6 +89,7 @@ def refresh_advisor_after_close():
             f"{watch_result.get('count', 0)} 观察标的, "
             f"{sample_result.get('created', 0)} 新样本, "
             f"{target_result.get('resolved', 0)} 回填目标, "
+            f"{model_result.get('sample_count', 0)} 训练样本, "
             f"组合风险 {report.get('portfolio', {}).get('risk_score')}"
         )
     except Exception as exc:

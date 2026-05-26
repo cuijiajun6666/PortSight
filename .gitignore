@@ -13,6 +13,7 @@ data/*
 !data/advisor_state.json
 !data/advisor_symbol_meta.json
 !data/advisor_training_samples.json
+!data/advisor_model.json
 !data/advisor_watchlist.json
 !data/advisor_alert_acks.json
 !data/advisor_trigger_alerts.json
