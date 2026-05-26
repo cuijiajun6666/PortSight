@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -11,6 +12,7 @@ from config import DATA_DIR
 
 TRAINING_SAMPLES_FILE = DATA_DIR / "advisor_training_samples.json"
 ADVISOR_MODEL_FILE = DATA_DIR / "advisor_model.json"
+ADVISOR_PKL_MODEL_TEMPLATE = "advisor_return_model_h{horizon}.pkl"
 DEFAULT_HORIZONS = [5, 20, 60]
 
 
@@ -34,6 +36,22 @@ def write_json(path, payload):
         json.dump(payload, file, ensure_ascii=False, indent=2)
         file.write("\n")
     os.replace(tmp_path, path)
+
+
+def pkl_model_path(horizon):
+    return DATA_DIR / ADVISOR_PKL_MODEL_TEMPLATE.format(horizon=horizon)
+
+
+def write_pickle(path, payload):
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("wb") as file:
+        pickle.dump(payload, file)
+    os.replace(tmp_path, path)
+
+
+def read_pickle(path):
+    with path.open("rb") as file:
+        return pickle.load(file)
 
 
 def load_training_samples():
@@ -581,7 +599,7 @@ def pearson(xs, ys):
     return numerator / ((x_var ** 0.5) * (y_var ** 0.5))
 
 
-def train_advisor_model(horizon=20, min_samples=8):
+def resolved_training_rows(horizon):
     payload = load_training_samples()
     rows = []
     for sample in payload.get("samples", []):
@@ -601,13 +619,168 @@ def train_advisor_model(horizon=20, min_samples=8):
             "actual_return": actual_return,
             "max_drawdown": max_drawdown,
         })
+    return rows
 
-    numeric_keys = sorted({
+
+def numeric_feature_keys(rows):
+    return sorted({
         key
         for row in rows
         for key, value in row["features"].items()
         if isinstance(value, (int, float)) and value is not None and not isinstance(value, bool)
     })
+
+
+def feature_stats(rows, keys):
+    stats = {}
+    for key in keys:
+        values = [
+            safe_float(row["features"].get(key), None)
+            for row in rows
+        ]
+        values = [value for value in values if value is not None]
+        if len(values) < max(3, len(rows) * 0.5):
+            continue
+        mean = sum(values) / len(values)
+        variance = sum((value - mean) ** 2 for value in values) / len(values)
+        std = variance ** 0.5
+        if std <= 1e-12:
+            continue
+        stats[key] = {"mean": mean, "std": std}
+    return stats
+
+
+def standardized_row(features, keys, stats):
+    return [
+        (safe_float(features.get(key), stats[key]["mean"]) - stats[key]["mean"]) / stats[key]["std"]
+        for key in keys
+    ]
+
+
+def select_model_features(rows, max_features=45):
+    keys = numeric_feature_keys(rows)
+    returns = [row["actual_return"] for row in rows]
+    scored = []
+    for key in keys:
+        values = [safe_float(row["features"].get(key), None) for row in rows]
+        corr = pearson(values, returns)
+        if corr is None:
+            continue
+        scored.append((abs(corr), key))
+    scored.sort(reverse=True)
+    return [key for _, key in scored[:max_features]]
+
+
+def fit_linear_return_model(rows, horizon, min_samples=20):
+    if len(rows) < min_samples:
+        return {
+            "ok": False,
+            "usable": False,
+            "reason": f"resolved samples {len(rows)} < min_samples {min_samples}",
+            "sample_count": len(rows),
+        }
+
+    selected = select_model_features(rows)
+    stats = feature_stats(rows, selected)
+    keys = [key for key in selected if key in stats]
+    if not keys:
+        return {
+            "ok": False,
+            "usable": False,
+            "reason": "no usable numeric features",
+            "sample_count": len(rows),
+        }
+
+    x_rows = [standardized_row(row["features"], keys, stats) for row in rows]
+    y_values = [row["actual_return"] for row in rows]
+    intercept = sum(y_values) / len(y_values)
+    coefficients = [0.0 for _ in keys]
+    learning_rate = 0.04 / max(1, len(keys) ** 0.5)
+    ridge = 0.02
+    epochs = 900
+
+    for _ in range(epochs):
+        grad_b = 0.0
+        grad_w = [0.0 for _ in keys]
+        for x_values, y_value in zip(x_rows, y_values):
+            pred = intercept + sum(weight * value for weight, value in zip(coefficients, x_values))
+            error = pred - y_value
+            grad_b += error
+            for idx, value in enumerate(x_values):
+                grad_w[idx] += error * value
+        scale = 1 / len(x_rows)
+        intercept -= learning_rate * grad_b * scale
+        for idx in range(len(coefficients)):
+            grad = grad_w[idx] * scale + ridge * coefficients[idx]
+            coefficients[idx] -= learning_rate * grad
+
+    predictions = [
+        intercept + sum(weight * value for weight, value in zip(coefficients, x_values))
+        for x_values in x_rows
+    ]
+    errors = [pred - actual for pred, actual in zip(predictions, y_values)]
+    mae = sum(abs(error) for error in errors) / len(errors)
+    direction_accuracy = sum((pred >= 0) == (actual >= 0) for pred, actual in zip(predictions, y_values)) / len(y_values)
+    model = {
+        "ok": True,
+        "usable": True,
+        "updated_at": utc_now_iso(),
+        "schema_version": 1,
+        "type": "standardized_linear_return_model_v1",
+        "format": "pickle",
+        "horizon": horizon,
+        "sample_count": len(rows),
+        "feature_count": len(keys),
+        "features": keys,
+        "stats": stats,
+        "intercept": intercept,
+        "coefficients": coefficients,
+        "train_mae": round(mae, 6),
+        "train_direction_accuracy": round(direction_accuracy, 4),
+        "note": "Shadow model: trained from resolved advisor samples. It should be monitored before driving live suggestions.",
+    }
+    write_pickle(pkl_model_path(horizon), model)
+    return {
+        "ok": True,
+        "usable": True,
+        "path": str(pkl_model_path(horizon)),
+        "horizon": horizon,
+        "sample_count": model["sample_count"],
+        "feature_count": model["feature_count"],
+        "train_mae": model["train_mae"],
+        "train_direction_accuracy": model["train_direction_accuracy"],
+    }
+
+
+def predict_with_pkl_model(features, horizon=20):
+    path = pkl_model_path(horizon)
+    if not path.exists():
+        return {
+            "ok": False,
+            "error": f"pkl model not found for horizon {horizon}",
+        }
+    model = read_pickle(path)
+    keys = model.get("features", [])
+    stats = model.get("stats", {})
+    x_values = standardized_row(features, keys, stats)
+    prediction = safe_float(model.get("intercept"))
+    for weight, value in zip(model.get("coefficients", []), x_values):
+        prediction += safe_float(weight) * value
+    return {
+        "ok": True,
+        "horizon": horizon,
+        "predicted_return": round(prediction, 6),
+        "model_updated_at": model.get("updated_at"),
+        "sample_count": model.get("sample_count"),
+        "train_mae": model.get("train_mae"),
+        "train_direction_accuracy": model.get("train_direction_accuracy"),
+    }
+
+
+def train_advisor_model(horizon=20, min_samples=8):
+    rows = resolved_training_rows(horizon)
+
+    numeric_keys = numeric_feature_keys(rows)
     factors = []
     for key in numeric_keys:
         xs = [row["features"].get(key) for row in rows]
@@ -625,6 +798,7 @@ def train_advisor_model(horizon=20, min_samples=8):
         })
 
     factors.sort(key=lambda item: item["importance"], reverse=True)
+    pkl_result = fit_linear_return_model(rows, horizon=horizon, min_samples=max(min_samples, 20))
     model = {
         "ok": len(rows) >= min_samples,
         "updated_at": utc_now_iso(),
@@ -636,6 +810,7 @@ def train_advisor_model(horizon=20, min_samples=8):
         "usable": len(rows) >= min_samples,
         "note": "This first model ranks which recorded features have historically aligned with future returns/drawdowns. It is intentionally not used for trading until enough clean samples exist.",
         "top_factors": factors[:30],
+        "pkl_shadow_model": pkl_result,
     }
     write_json(ADVISOR_MODEL_FILE, model)
     return model
