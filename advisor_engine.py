@@ -296,6 +296,178 @@ def volatility_tier(volatility):
     return "low"
 
 
+def recent_swing_points(frame, column, mode="low", window=2, limit=8):
+    if frame.empty or column not in frame.columns:
+        return []
+    data = frame.tail(140).reset_index(drop=True)
+    points = []
+    for idx in range(window, len(data) - window):
+        value = safe_float(data.loc[idx, column], None)
+        if value is None:
+            continue
+        nearby = data.loc[idx - window:idx + window, column].dropna()
+        if nearby.empty:
+            continue
+        if mode == "low" and value <= safe_float(nearby.min(), value):
+            points.append({"date": str(data.loc[idx, "date"]), "value": value})
+        elif mode == "high" and value >= safe_float(nearby.max(), value):
+            points.append({"date": str(data.loc[idx, "date"]), "value": value})
+    return points[-limit:]
+
+
+def rising_sequence(points, tolerance=0.01):
+    if len(points) < 3:
+        return False
+    values = [safe_float(item.get("value")) for item in points[-3:]]
+    return values[2] >= values[1] * (1 - tolerance) and values[1] >= values[0] * (1 - tolerance)
+
+
+def falling_sequence(points, tolerance=0.01):
+    if len(points) < 3:
+        return False
+    values = [safe_float(item.get("value")) for item in points[-3:]]
+    return values[2] <= values[1] * (1 + tolerance) and values[1] <= values[0] * (1 + tolerance)
+
+
+def price_structure_analysis(frame, latest):
+    if frame.empty:
+        return {
+            "status": "unknown",
+            "score": 0,
+            "points": [],
+            "swing_lows": [],
+            "swing_highs": [],
+        }
+    data = frame.copy().sort_values("date")
+    close = safe_float(latest.get("close"))
+    recent = data.tail(60)
+    lows = recent_swing_points(data, "low", mode="low")
+    highs = recent_swing_points(data, "high", mode="high")
+    higher_lows = rising_sequence(lows)
+    higher_highs = rising_sequence(highs)
+    lower_lows = falling_sequence(lows)
+    lower_highs = falling_sequence(highs)
+    recent_high_20 = safe_float(data.tail(20)["high"].max())
+    recent_low_20 = safe_float(data.tail(20)["low"].min())
+    recent_high_60 = safe_float(recent["high"].max())
+    recent_low_60 = safe_float(recent["low"].min())
+    volume = safe_float(latest.get("volume"), None)
+    avg_volume_20 = safe_float(data.tail(20)["volume"].mean(), None) if "volume" in data.columns else None
+    range_20 = (recent_high_20 - recent_low_20) / close if close > 0 else 0
+    range_60 = (recent_high_60 - recent_low_60) / close if close > 0 else 0
+    breakout_20 = close > recent_high_20 * 0.995 if recent_high_20 > 0 else False
+    breakdown_20 = close < recent_low_20 * 1.005 if recent_low_20 > 0 else False
+    volume_expansion = volume is not None and avg_volume_20 and volume >= avg_volume_20 * 1.3
+
+    score = 0
+    points = []
+    if higher_lows:
+        score += 18
+        points.append("近阶段低点不断抬高，承接在增强")
+    if higher_highs:
+        score += 14
+        points.append("近阶段高点同步抬高，趋势结构偏多")
+    if lower_lows:
+        score -= 18
+        points.append("近阶段低点下移，趋势结构仍偏弱")
+    if lower_highs:
+        score -= 12
+        points.append("反弹高点下移，上方抛压仍在")
+    if breakout_20 and volume_expansion:
+        score += 16
+        points.append("接近/突破20日高位且成交量放大")
+    elif breakout_20:
+        score += 8
+        points.append("价格接近/突破20日高位，但量能确认一般")
+    if breakdown_20:
+        score -= 14
+        points.append("价格靠近/跌破20日低位，短期结构走弱")
+    if 0 < range_20 < range_60 * 0.45:
+        score += 5
+        points.append("20日振幅相对收窄，可能进入蓄势区")
+
+    if score >= 22:
+        status = "constructive"
+    elif score >= 8:
+        status = "improving"
+    elif score <= -20:
+        status = "damaged"
+    elif score <= -8:
+        status = "weakening"
+    else:
+        status = "neutral"
+
+    return {
+        "status": status,
+        "score": round(score, 2),
+        "points": points,
+        "swing_lows": lows[-4:],
+        "swing_highs": highs[-4:],
+        "recent_high_20": round(recent_high_20, 4),
+        "recent_low_20": round(recent_low_20, 4),
+        "range_20": round(range_20, 4),
+        "range_60": round(range_60, 4),
+        "volume_expansion": bool(volume_expansion),
+    }
+
+
+def stock_personality_profile(code, size_tier, risk_tier, vol_tier, plates, ret20, ret60, rsi, price_structure, daily_short_volume, short_interest):
+    names = " ".join(plate_names(plates)).lower()
+    short_volume = daily_short_volume_summary(daily_short_volume)
+    short_summary = short_interest_summary(short_interest)
+    short_percent = safe_float(short_volume.get("latest_short_percent"), 0)
+    days_to_cover = safe_float(short_summary.get("days_to_cover"), 0)
+    traits = []
+
+    speculative = risk_tier == "speculative" or size_tier == "small_cap" or vol_tier in ("high", "extreme")
+    squeeze = short_percent >= 30 or days_to_cover >= 3
+    momentum = ret20 > 0.12 and ret60 > 0
+    reversal = price_structure.get("status") in ("constructive", "improving") and ret60 < 0
+    mega_or_quality = size_tier == "large_cap" or any(word in names for word in ["mega", "large cap", "大盘", "nasdaq", "s&p"])
+
+    if speculative:
+        traits.append("高波动/投机属性")
+    if squeeze:
+        traits.append("空头拥挤或轧空敏感")
+    if momentum:
+        traits.append("趋势动量型")
+    if reversal:
+        traits.append("反转修复型")
+    if mega_or_quality:
+        traits.append("大盘/质量权重型")
+
+    if speculative:
+        profile_type = "speculative_momentum"
+        rsi_hot = 84 if squeeze else 80
+        max_buy_percent = 5 if vol_tier == "extreme" else 10
+        trim_bias = 8
+        note = "这类股票不能用普通蓝筹的RSI阈值，但仓位和止盈要更严格。"
+    elif mega_or_quality:
+        profile_type = "quality_trend"
+        rsi_hot = 74
+        max_buy_percent = 15
+        trim_bias = 0
+        note = "这类股票更看重趋势延续、估值和财务质量，允许更平滑地分批。"
+    else:
+        profile_type = "standard"
+        rsi_hot = 76
+        max_buy_percent = 10
+        trim_bias = 3
+        note = "按普通趋势/风险模型处理，等待技术和资金面相互确认。"
+
+    return {
+        "type": profile_type,
+        "traits": traits or ["普通趋势型"],
+        "speculative": speculative,
+        "short_squeeze_sensitive": squeeze,
+        "rsi_hot_threshold": rsi_hot,
+        "max_buy_percent": max_buy_percent,
+        "trim_bias": trim_bias,
+        "current_rsi_state": "overheated" if rsi >= rsi_hot else "hot" if rsi >= rsi_hot - 6 else "normal",
+        "strategy_note": note,
+    }
+
+
 def valuation_percentile_to_unit(value):
     percentile = safe_float(value, -1)
     if percentile < 0:
@@ -765,7 +937,7 @@ def nearest_below(values, current):
     return candidates[0] if candidates else 0
 
 
-def position_trade_plan(position, action, risk_score, technical_score, weight, volatility_tier, close, daily_frame, levels=None, confirmed=False):
+def position_trade_plan(position, action, risk_score, technical_score, weight, volatility_tier, close, daily_frame, levels=None, confirmed=False, personality=None):
     qty = safe_float(position.get("qty"))
     unrealized_pl = safe_float(position.get("unrealized_pl"))
     pl_ratio = safe_float(position.get("pl_ratio"))
@@ -777,6 +949,7 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
     recent_high = 0
     recent_low = 0
     levels = levels or {}
+    personality = personality or {}
     if not daily_frame.empty:
         recent_high = safe_float(daily_frame.tail(20)["high"].max())
         recent_low = safe_float(daily_frame.tail(20)["low"].min())
@@ -842,6 +1015,9 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
             buy_pct = 15
         if volatility_tier in ("high", "extreme"):
             buy_pct = max(5, buy_pct - 5)
+        max_buy_percent = safe_float(personality.get("max_buy_percent"), None)
+        if max_buy_percent is not None and max_buy_percent > 0:
+            buy_pct = min(buy_pct, int(max_buy_percent))
         alert_type = "buy"
         target = nearest_below(support_levels, close)
         if not target and close > 0:
@@ -859,7 +1035,7 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
         "sell_qty": sell_qty,
         "trigger_price": trigger_price,
         "trigger_condition": trigger_condition,
-        "basis": "基于当前仓位、浮盈亏、波动率、技术面和组合集中度的分批建议",
+        "basis": "基于当前仓位、浮盈亏、波动率、裸K结构、技术面、股票性格和组合集中度的分批建议",
     }
 
 
@@ -892,6 +1068,8 @@ def price_scale_guard(position, kline_close):
 
 def make_analysis_points(
     *,
+    price_structure,
+    personality,
     close,
     ma5,
     ma20,
@@ -912,12 +1090,30 @@ def make_analysis_points(
     capital_distribution,
     daily_short_volume,
     short_interest,
+    valuation,
     shareholders_changes,
+    shareholders_overview,
     insider_trades,
+    insider_holders,
     financials,
     earnings,
+    operational_efficiency,
 ):
     points = []
+    points.append({
+        "category": "profile",
+        "label": "股票性格",
+        "status": personality.get("type", "standard"),
+        "detail": f"{', '.join(personality.get('traits', []))}; {personality.get('strategy_note', '')}",
+    })
+
+    points.append({
+        "category": "price_action",
+        "label": "裸K结构",
+        "status": price_structure.get("status", "unknown"),
+        "detail": "；".join(price_structure.get("points", [])[:3]) or "裸K结构暂未出现明确方向",
+    })
+
     ma_stack = "bullish" if ma5 > ma20 > ma60 > 0 else "bearish" if ma5 < ma20 < ma60 and ma60 > 0 else "mixed"
     points.append({
         "category": "technical",
@@ -994,6 +1190,26 @@ def make_analysis_points(
             "detail": f"最新卖空比例={latest_short}, 20期均值={avg_short}, 回补天数={days_to_cover}",
         })
 
+    val = valuation or {}
+    trend = val.get("trend", {}) if val else {}
+    percentile = valuation_percentile_to_unit(trend.get("valuation_percentile"))
+    if trend:
+        points.append({
+            "category": "valuation",
+            "label": "估值",
+            "status": "expensive" if percentile is not None and percentile >= 0.8 else "cheap" if percentile is not None and percentile <= 0.25 else "neutral",
+            "detail": f"当前估值={trend.get('current_value')}, 历史均值={trend.get('average_value')}, 分位={None if percentile is None else round(percentile, 4)}",
+        })
+
+    holders = shareholders_overview_summary(shareholders_overview)
+    if holders:
+        points.append({
+            "category": "holders",
+            "label": "持股集中度",
+            "status": "concentrated" if safe_float(holders.get("top5_holder_pct"), 0) >= 65 else "normal",
+            "detail": f"第一大股东={holders.get('top_holder_pct')}, 前五大={holders.get('top5_holder_pct')}",
+        })
+
     changes = shareholders_changes_summary(shareholders_changes)
     net_holder_change = safe_float(changes.get("net_share_ratio_change"), None)
     if net_holder_change is not None:
@@ -1005,12 +1221,13 @@ def make_analysis_points(
         })
 
     insider = insider_trades_summary(insider_trades)
-    if insider and not insider.get("unsupported"):
+    insider_holder = insider_holders_summary(insider_holders)
+    if (insider or insider_holder) and not insider.get("unsupported") and not insider_holder.get("unsupported"):
         points.append({
             "category": "insider",
             "label": "内部人交易",
             "status": "buying" if safe_float(insider.get("net_trade_shares")) > 0 else "selling" if safe_float(insider.get("net_trade_shares")) < 0 else "neutral",
-            "detail": f"买入次数={insider.get('buy_count')}, 卖出次数={insider.get('sell_count')}, 净股数={insider.get('net_trade_shares')}",
+            "detail": f"买入次数={insider.get('buy_count')}, 卖出次数={insider.get('sell_count')}, 净股数={insider.get('net_trade_shares')}, 内部人持股={insider_holder.get('total_holder_pct')}",
         })
 
     fin = financial_summary(financials)
@@ -1020,6 +1237,15 @@ def make_analysis_points(
             "label": "财务",
             "status": "improving" if safe_float(fin.get("revenue_yoy"), 0) > 10 or safe_float(fin.get("net_income_yoy"), 0) > 20 else "watch",
             "detail": f"收入同比={fin.get('revenue_yoy')}, 净利润同比={fin.get('net_income_yoy')}, 期间={fin.get('latest_period')}",
+        })
+
+    efficiency = operational_efficiency_summary(operational_efficiency)
+    if efficiency:
+        points.append({
+            "category": "fundamental",
+            "label": "经营效率",
+            "status": "improving" if safe_float(efficiency.get("income_per_capita_yoy"), 0) > 10 or safe_float(efficiency.get("net_profit_per_capita_yoy"), 0) > 15 else "watch",
+            "detail": f"人均营收同比={efficiency.get('income_per_capita_yoy')}, 人均净利润同比={efficiency.get('net_profit_per_capita_yoy')}",
         })
 
     earn = earnings_summary(earnings)
@@ -1115,6 +1341,22 @@ def score_position(
     boll_upper = safe_float(latest.get("boll_upper"))
     boll_lower = safe_float(latest.get("boll_lower"))
     boll_position = safe_float(latest_week.get("boll_position"), 0.5)
+    risk_tier = meta.get(code, {}).get("risk_tier", "")
+    price_structure = price_structure_analysis(indicators, latest)
+    personality = stock_personality_profile(
+        code,
+        size_tier,
+        risk_tier,
+        vol_tier,
+        plates,
+        ret20,
+        ret60,
+        rsi,
+        price_structure,
+        daily_short_volume,
+        short_interest,
+    )
+    rsi_hot_threshold = safe_float(personality.get("rsi_hot_threshold"), 76)
 
     trend_score = 50
     reasons = []
@@ -1150,14 +1392,16 @@ def score_position(
     macd_improving = indicators_ok and macd_hist > prev_macd_hist
     macd_bullish = indicators_ok and macd > macd_signal and macd_hist > 0
     macd_bearish = indicators_ok and macd < macd_signal and macd_hist < 0
+    trend_score += max(-18, min(18, safe_float(price_structure.get("score")) * 0.45))
+    reasons.extend(price_structure.get("points", [])[:3])
 
     momentum_score = 50 + max(-25, min(25, ret20 * 100)) + max(-15, min(15, ret60 * 50))
     if 45 <= rsi <= 68:
         momentum_score += 8
         reasons.append("RSI处在相对健康区间")
-    elif rsi > 75:
+    elif rsi > rsi_hot_threshold:
         momentum_score -= 10
-        reasons.append("RSI偏热，追高风险上升")
+        reasons.append(f"RSI高于该股票性格阈值({rsi_hot_threshold:.0f})，追高风险上升")
     elif rsi < 35:
         momentum_score -= 8
         reasons.append("RSI偏弱，趋势仍需确认")
@@ -1165,10 +1409,10 @@ def score_position(
     volatility_risk = min(100, vol60 * 100)
     drawdown_risk = min(100, drawdown * 160)
     concentration_risk = min(100, weight * 250)
-    risk_tier = meta.get(code, {}).get("risk_tier", "")
     speculative_addon = 15 if risk_tier == "speculative" else 0
     size_addon = 8 if size_tier == "small_cap" else 0
     volatility_addon = 10 if vol_tier == "extreme" else 5 if vol_tier == "high" else 0
+    personality_addon = safe_float(personality.get("trim_bias"), 0) if personality.get("speculative") else 0
     valuation_addon, valuation_reasons = valuation_risk_adjustment(valuation)
     financial_addon, financial_reasons = financial_risk_adjustment(financials)
     earnings_addon, earnings_reasons = earnings_risk_adjustment(earnings)
@@ -1187,6 +1431,7 @@ def score_position(
         + speculative_addon
         + size_addon
         + volatility_addon
+        + personality_addon
         + valuation_addon
         + financial_addon
         + earnings_addon
@@ -1230,21 +1475,21 @@ def score_position(
         action = "watch"
         suggestion = "核心技术指标不足，先观察，不生成买卖触发价。"
         confirmed = False
-    elif risk_score >= 70 and weight >= 0.15 and (macd_bearish or rsi > 72 or pl_ratio > 0.20):
+    elif risk_score >= 70 and weight >= 0.15 and (macd_bearish or rsi > rsi_hot_threshold - 4 or pl_ratio > 0.20):
         action = "trim"
         suggestion = "风险和仓位都偏高，且动能/获利状态支持分批降低敞口。"
         confirmed = True
-    elif pl_ratio >= 0.25 and risk_score >= 58 and (macd_bearish or rsi > 70):
+    elif pl_ratio >= 0.25 and risk_score >= 58 and (macd_bearish or rsi > rsi_hot_threshold - 6):
         action = "trim"
         suggestion = "已有较明显浮盈且风险不低，可考虑到目标价后分批止盈。"
         confirmed = True
-    elif pl_ratio <= -0.15 and technical_score >= 65 and risk_score < 60 and weight < 0.20 and macd_bullish:
+    elif pl_ratio <= -0.15 and technical_score >= 65 and risk_score < 60 and weight < 0.20 and macd_bullish and price_structure.get("status") in ("constructive", "improving"):
         action = "add_candidate"
-        suggestion = "持仓浮亏但技术面修复，可只在触发价附近小比例补仓，避免一次性摊平。"
+        suggestion = "持仓浮亏但裸K结构和动能同步修复，可只在触发价附近小比例补仓，避免一次性摊平。"
         confirmed = True
-    elif technical_score >= 68 and risk_score < 55 and weight < 0.20 and macd_bullish:
+    elif technical_score >= 68 and risk_score < 55 and weight < 0.20 and macd_bullish and price_structure.get("status") in ("constructive", "improving"):
         action = "add_candidate"
-        suggestion = "技术面较强且组合占比未过高，可列入加仓观察，不建议一次性重仓。"
+        suggestion = "裸K结构、动能和风险匹配度较好，可列入加仓观察，不建议一次性重仓。"
         confirmed = True
     elif technical_score >= 58 and risk_score < 70 and macd_improving:
         action = "hold"
@@ -1282,8 +1527,10 @@ def score_position(
         "boll_upper": boll_upper,
         "boll_lower": boll_lower,
     }
-    trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier, close, daily_frame, levels=levels, confirmed=confirmed)
+    trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier, close, daily_frame, levels=levels, confirmed=confirmed, personality=personality)
     analysis_points = make_analysis_points(
+        price_structure=price_structure,
+        personality=personality,
         close=close,
         ma5=ma5,
         ma20=ma20,
@@ -1304,10 +1551,14 @@ def score_position(
         capital_distribution=capital_distribution,
         daily_short_volume=daily_short_volume,
         short_interest=short_interest,
+        valuation=valuation,
         shareholders_changes=shareholders_changes,
+        shareholders_overview=shareholders_overview,
         insider_trades=insider_trades,
+        insider_holders=insider_holders,
         financials=financials,
         earnings=earnings,
+        operational_efficiency=operational_efficiency,
     )
 
     return {
@@ -1319,6 +1570,7 @@ def score_position(
             "risk_tier": risk_tier or "normal",
             "size_tier": size_tier,
             "volatility_tier": vol_tier,
+            "personality": personality,
             "plates": plates,
             "valuation": valuation,
             "financials": financial_summary(financials),
@@ -1359,6 +1611,22 @@ def score_position(
         "pl_ratio": safe_float(position.get("pl_ratio")),
         "risk_score": risk_score,
         "technical_score": technical_score,
+        "score_breakdown": {
+            "trend_score": round(trend_score, 2),
+            "momentum_score": round(momentum_score, 2),
+            "volatility_risk": round(volatility_risk, 2),
+            "drawdown_risk": round(drawdown_risk, 2),
+            "concentration_risk": round(concentration_risk, 2),
+            "personality_addon": round(personality_addon, 2),
+            "valuation_addon": round(valuation_addon, 2),
+            "financial_addon": round(financial_addon, 2),
+            "earnings_addon": round(earnings_addon, 2),
+            "efficiency_addon": round(efficiency_addon, 2),
+            "capital_addon": round(capital_addon, 2),
+            "short_addon": round(short_addon, 2),
+            "shareholders_addon": round(shareholders_addon, 2),
+            "insider_addon": round(insider_addon, 2),
+        },
         "action": action,
         "confirmed": confirmed,
         "trade_plan": trade_plan,
@@ -1395,6 +1663,7 @@ def score_position(
             },
         },
         "analysis_points": analysis_points,
+        "price_structure": price_structure,
         "reasons": reasons[:8],
     }
 
@@ -2130,23 +2399,33 @@ def compact_position_advice(position):
         "pl_ratio": position.get("pl_ratio"),
         "risk_score": position.get("risk_score"),
         "technical_score": position.get("technical_score"),
+        "score_breakdown": position.get("score_breakdown", {}),
         "action": position.get("action"),
         "confirmed": position.get("confirmed"),
         "trade_plan": position.get("trade_plan", {}),
         "suggestion": position.get("suggestion"),
         "reasons": position.get("reasons", []),
         "analysis_points": position.get("analysis_points", []),
+        "price_structure": position.get("price_structure", {}),
         "prediction": position.get("prediction", {}),
         "signals": position.get("signals", {}),
         "profile": {
             "risk_tier": position.get("profile", {}).get("risk_tier"),
             "size_tier": position.get("profile", {}).get("size_tier"),
             "volatility_tier": position.get("profile", {}).get("volatility_tier"),
+            "personality": position.get("profile", {}).get("personality"),
             "valuation": position.get("profile", {}).get("valuation"),
+            "financials": position.get("profile", {}).get("financials"),
+            "earnings": position.get("profile", {}).get("earnings"),
+            "operational_efficiency": position.get("profile", {}).get("operational_efficiency"),
             "capital_flow": position.get("profile", {}).get("capital_flow"),
+            "capital_distribution": position.get("profile", {}).get("capital_distribution"),
+            "daily_short_volume": position.get("profile", {}).get("daily_short_volume"),
             "short_interest": position.get("profile", {}).get("short_interest"),
+            "shareholders_overview": position.get("profile", {}).get("shareholders_overview"),
             "shareholders_changes": position.get("profile", {}).get("shareholders_changes"),
             "insider_trades": position.get("profile", {}).get("insider_trades"),
+            "insider_holders": position.get("profile", {}).get("insider_holders"),
         },
     }
 
