@@ -382,6 +382,22 @@ def make_sample(report, position, horizons=None):
     trading_date = latest_kline_date(symbol) or str(report.get("updated_at", ""))[:10]
     horizons = horizons or DEFAULT_HORIZONS
     features, signals = build_feature_row(report, position)
+    prediction = position.get("prediction", {}) or {}
+    expected_vol_30d = safe_float(prediction.get("expected_volatility_30d"), 0)
+    expected_by_horizon = {}
+    for horizon in horizons:
+        trend_key = f"trend_{horizon}d"
+        expected_return = safe_float(prediction.get(trend_key), None)
+        if expected_return is None and horizon == 5:
+            expected_return = safe_float(features.get("trend_5d"), None)
+        if expected_return is None:
+            expected_return = safe_float(features.get("trend_20d"), None)
+        volatility_scale = (horizon / 30) ** 0.5 if horizon > 0 else 1
+        expected_by_horizon[str(horizon)] = {
+            "expected_return": expected_return,
+            "expected_volatility": round(expected_vol_30d * volatility_scale, 6) if expected_vol_30d else None,
+            "expected_max_drawdown": round(-expected_vol_30d * volatility_scale * 0.65, 6) if expected_vol_30d else None,
+        }
     return {
         "id": sample_id(trading_date, symbol),
         "created_at": utc_now_iso(),
@@ -405,6 +421,7 @@ def make_sample(report, position, horizons=None):
             "risk_score": position.get("risk_score"),
             "technical_score": position.get("technical_score"),
             "horizons": horizons,
+            "expected_by_horizon": expected_by_horizon,
         },
         "targets": {
             str(horizon): None
@@ -465,17 +482,31 @@ def future_window(frame, trading_date, horizon):
     return future
 
 
-def build_target(entry_close, future):
+def build_target(entry_close, future, expected=None):
     final = future.iloc[-1]
     close_series = future["close"].astype(float)
-    return {
+    actual_return = float(final["close"]) / entry_close - 1 if entry_close else None
+    actual_max_drawdown = float(close_series.min()) / entry_close - 1 if entry_close else None
+    actual_max_runup = float(close_series.max()) / entry_close - 1 if entry_close else None
+    expected = expected or {}
+    expected_return = safe_float(expected.get("expected_return"), None)
+    expected_max_drawdown = safe_float(expected.get("expected_max_drawdown"), None)
+    target = {
         "resolved_at": utc_now_iso(),
         "target_date": str(final["date"]),
-        "actual_return": round(float(final["close"]) / entry_close - 1, 6) if entry_close else None,
-        "actual_max_drawdown": round(float(close_series.min()) / entry_close - 1, 6) if entry_close else None,
-        "actual_max_runup": round(float(close_series.max()) / entry_close - 1, 6) if entry_close else None,
+        "actual_return": round(actual_return, 6) if actual_return is not None else None,
+        "actual_max_drawdown": round(actual_max_drawdown, 6) if actual_max_drawdown is not None else None,
+        "actual_max_runup": round(actual_max_runup, 6) if actual_max_runup is not None else None,
         "final_close": safe_float(final["close"]),
     }
+    if expected:
+        target["expected"] = expected
+        if expected_return is not None and actual_return is not None:
+            target["return_error"] = round(actual_return - expected_return, 6)
+            target["return_direction_correct"] = (actual_return >= 0) == (expected_return >= 0)
+        if expected_max_drawdown is not None and actual_max_drawdown is not None:
+            target["drawdown_error"] = round(actual_max_drawdown - expected_max_drawdown, 6)
+    return target
 
 
 def update_training_targets():
@@ -503,7 +534,8 @@ def update_training_targets():
             if future is None:
                 pending += 1
                 continue
-            targets[horizon_key] = build_target(entry_close, future)
+            expected = (sample.get("prediction", {}).get("expected_by_horizon", {}) or {}).get(horizon_key)
+            targets[horizon_key] = build_target(entry_close, future, expected=expected)
             resolved += 1
 
     save_training_samples(payload)
