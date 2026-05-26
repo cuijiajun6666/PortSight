@@ -1,7 +1,7 @@
 import json
 import math
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 from moomoo import *
@@ -1088,6 +1088,12 @@ def score_position(
     latest_month = monthly.iloc[-1] if not monthly.empty else latest
     indicators_ok = indicator_ready(latest)
     kline_date = str(latest.get("date", ""))
+    expected_latest = get_latest_closed_trading_date()
+    expected_latest_str = expected_latest.isoformat() if expected_latest else None
+    freshness_ok = (
+        not expected_latest_str
+        or kline_date == expected_latest_str
+    )
     kline_close = safe_float(latest.get("close"))
     close = kline_close
     scale_guard = price_scale_guard(position, kline_close)
@@ -1112,6 +1118,8 @@ def score_position(
 
     trend_score = 50
     reasons = []
+    if not freshness_ok:
+        reasons.append(f"K线数据过期: 最新K线 {kline_date}, 应为 {expected_latest_str}")
     if not scale_guard.get("ok"):
         reasons.append(scale_guard.get("reason"))
     if not indicators_ok:
@@ -1209,8 +1217,12 @@ def score_position(
     suggestion = "继续观察，等待趋势和风险信号进一步确认。"
     pl_ratio = safe_float(position.get("pl_ratio"))
     unrealized_pl = safe_float(position.get("unrealized_pl"))
-    confirmed = indicators_ok
-    if not scale_guard.get("ok"):
+    confirmed = indicators_ok and freshness_ok
+    if not freshness_ok:
+        action = "watch"
+        suggestion = "K线数据过期，禁止生成交易建议；请先同步最近一个已收盘交易日的日K。"
+        confirmed = False
+    elif not scale_guard.get("ok"):
         action = "watch"
         suggestion = "价格口径不一致，先观察并刷新不复权日K后再生成交易计划。"
         confirmed = False
@@ -1331,9 +1343,12 @@ def score_position(
         "kline_close": kline_close,
         "price_source": "kline",
         "data_quality": {
-            "ok": scale_guard.get("ok") and indicators_ok,
+            "ok": scale_guard.get("ok") and indicators_ok and freshness_ok,
             "price_scale_ok": scale_guard.get("ok"),
             "indicator_ready": indicators_ok,
+            "freshness_ok": freshness_ok,
+            "expected_latest_trading_date": expected_latest_str,
+            "latest_kline_date": kline_date,
             "position_price": scale_guard.get("position_price"),
             "price_scale_ratio": scale_guard.get("ratio"),
             "reason": scale_guard.get("reason"),
@@ -1577,16 +1592,23 @@ def latest_row_date(rows):
     return rows[-1].get("date")
 
 
-def request_raw_kline_tail(code, autype, limit=5):
+def request_raw_kline_tail(code, autype, limit=5, expected_latest=None):
+    request_end = expected_latest.isoformat() if expected_latest else None
+    request_days = max(30, limit * 5)
+    request_start = (
+        (expected_latest - timedelta(days=request_days)).isoformat()
+        if expected_latest
+        else None
+    )
     quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
     try:
         ret, data, _ = quote_ctx.request_history_kline(
             code,
-            start=None,
-            end=None,
+            start=request_start,
+            end=request_end,
             ktype=KLType.K_DAY,
             autype=autype,
-            max_count=max(10, limit),
+            max_count=max(50, limit * 5),
         )
     finally:
         quote_ctx.close()
@@ -1595,6 +1617,8 @@ def request_raw_kline_tail(code, autype, limit=5):
         return {
             "ok": False,
             "error": str(data),
+            "request_start": request_start,
+            "request_end": request_end,
             "rows": [],
         }
     frame = data.copy()
@@ -1602,6 +1626,9 @@ def request_raw_kline_tail(code, autype, limit=5):
         frame["date"] = pd.to_datetime(frame["time_key"]).dt.date.astype(str)
     return {
         "ok": True,
+        "request_start": request_start,
+        "request_end": request_end,
+        "raw_rows": len(frame),
         "rows": frame_tail_records(frame, limit=limit),
     }
 
@@ -1638,7 +1665,7 @@ def get_raw_kline_debug(symbols=None, limit=5):
         if not code:
             continue
         variants = {
-            name: request_raw_kline_tail(code, autype, limit=limit)
+            name: request_raw_kline_tail(code, autype, limit=limit, expected_latest=expected_latest)
             for name, autype in autypes
         }
         for payload in variants.values():

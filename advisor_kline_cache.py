@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import pandas as pd
 from moomoo import *
 
+from asset_snapshots import get_latest_closed_trading_date
 from config import DATA_DIR, HOST, PORT
 
 
@@ -108,6 +109,13 @@ def wait_for_kline_rate_limit():
         _last_kline_request_at = time.monotonic()
 
 
+def default_kline_end():
+    latest_closed = get_latest_closed_trading_date()
+    if latest_closed:
+        return latest_closed.isoformat()
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 def load_cached_klines(code, period="day"):
     payload = read_json(symbol_file(code, period=period), {"code": code, "period": period, "rows": []})
     rows = payload.get("rows", [])
@@ -158,7 +166,7 @@ def normalize_kline_frame(data):
     return frame[keep].dropna(subset=["close"]).sort_values("date")
 
 
-def should_refresh(payload, force=False):
+def should_refresh(payload, period="day", force=False):
     if force:
         return True
     if payload.get("autype") != KLINE_AUTYPE_NAME:
@@ -166,6 +174,11 @@ def should_refresh(payload, force=False):
     rows = payload.get("rows", [])
     if not rows:
         return True
+    if period == "day":
+        latest_expected = get_latest_closed_trading_date()
+        latest_cached = rows[-1].get("date") or str(rows[-1].get("time_key", ""))[:10]
+        if latest_expected and latest_cached != latest_expected.isoformat():
+            return True
     fetched_at = payload.get("fetched_at")
     if not fetched_at:
         return True
@@ -177,6 +190,7 @@ def should_refresh(payload, force=False):
 
 
 def request_klines(code, start=None, end=None, period="day"):
+    effective_end = end or default_kline_end()
     quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
     frames = []
     page_req_key = None
@@ -187,7 +201,7 @@ def request_klines(code, start=None, end=None, period="day"):
             ret, data, page_req_key = quote_ctx.request_history_kline(
                 code,
                 start=start or DEFAULT_KLINE_START,
-                end=end,
+                end=effective_end,
                 ktype=kltype_for_period(period),
                 autype=KLINE_AUTYPE,
                 max_count=1000,
@@ -209,8 +223,9 @@ def request_klines(code, start=None, end=None, period="day"):
 
 def sync_klines(code, start=None, end=None, period="day", force=False):
     with _cache_lock:
+        effective_end = end or default_kline_end()
         payload, cached = load_cached_klines(code, period=period)
-        if not should_refresh(payload, force=force):
+        if not should_refresh(payload, period=period, force=force):
             return {
                 "ok": True,
                 "synced": False,
@@ -221,7 +236,7 @@ def sync_klines(code, start=None, end=None, period="day", force=False):
                 "latest_date": None if cached.empty else str(cached.iloc[-1]["date"]),
             }
 
-        fresh = request_klines(code, start=start, end=end, period=period)
+        fresh = request_klines(code, start=start, end=effective_end, period=period)
         rows = frame_to_rows(fresh)
         atomic_write_json(symbol_file(code, period=period), {
             "code": code,
@@ -229,7 +244,7 @@ def sync_klines(code, start=None, end=None, period="day", force=False):
             "autype": KLINE_AUTYPE_NAME,
             "fetched_at": utc_now_iso(),
             "start": start or DEFAULT_KLINE_START,
-            "end": end,
+            "end": effective_end,
             "rows": rows,
         })
         return {
