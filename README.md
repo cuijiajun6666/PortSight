@@ -209,7 +209,7 @@ curl -X POST "http://127.0.0.1:8000/advisor/training_samples/update_targets"
 curl "http://127.0.0.1:8000/advisor/training_samples?limit=50"
 ```
 
-`/advisor/summary` is the frontend-friendly compact response for portfolio advice and per-position advice. `/advisor/candidate` analyzes a symbol even if it is not in current positions and does not save it. `/advisor/watchlist` keeps a short observation pool for buy candidates: it gives an immediate historical-K-line judgment, then records daily observations. `/advisor/alerts` returns active buy-watch alerts when a watched symbol reaches a buy-candidate signal. Pausing a symbol keeps its cached history; deleting removes it from the active watchlist.
+`/advisor/summary` is the frontend-friendly compact response for portfolio advice and per-position advice. It includes `portfolio.score`, `portfolio.rating_label`, `portfolio.pnl`, and each position's `trade_plan`. `/advisor/candidate` analyzes a symbol even if it is not in current positions and does not save it. `/advisor/watchlist` keeps a short observation pool for buy candidates: it gives an immediate historical-K-line judgment, then records daily observations. `/advisor/alerts` returns active watchlist buy alerts and current-position buy/sell alerts. Sell alerts include a suggested sell percentage and quantity. Pausing a symbol keeps its cached history; deleting removes it from the active watchlist.
 
 The backend also runs an advisor refresh job on weekdays at `16:25 America/New_York`, after the market close snapshot. This job refreshes current-position advice, updates active watchlist observations, records training samples, and backfills expired prediction targets.
 
@@ -220,6 +220,7 @@ data/advisor_state.json
 data/advisor_symbol_meta.json
 data/advisor_training_samples.json
 data/advisor_watchlist.json
+data/advisor_alert_acks.json
 ```
 
 Ignored advisor cache:

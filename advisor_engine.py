@@ -49,6 +49,7 @@ ADVISOR_STATE_FILE = DATA_DIR / "advisor_state.json"
 ADVISOR_REPORT_FILE = DATA_DIR / "advisor_report.json"
 SYMBOL_META_FILE = DATA_DIR / "advisor_symbol_meta.json"
 ADVISOR_WATCHLIST_FILE = DATA_DIR / "advisor_watchlist.json"
+ADVISOR_ALERT_ACKS_FILE = DATA_DIR / "advisor_alert_acks.json"
 
 DEFAULT_WEIGHTS = {
     "trend": 0.28,
@@ -130,6 +131,17 @@ def load_watchlist():
 def save_watchlist(payload):
     payload["updated_at"] = utc_now_iso()
     write_json(ADVISOR_WATCHLIST_FILE, payload)
+
+
+def load_alert_acks():
+    payload = read_json(ADVISOR_ALERT_ACKS_FILE, {})
+    payload.setdefault("acknowledged_ids", [])
+    return payload
+
+
+def save_alert_acks(payload):
+    payload["updated_at"] = utc_now_iso()
+    write_json(ADVISOR_ALERT_ACKS_FILE, payload)
 
 
 def safe_float(value, default=0.0):
@@ -721,6 +733,54 @@ def insider_risk_adjustment(insider_trades, insider_holders):
     return adjustment, reasons
 
 
+def position_trade_plan(position, action, risk_score, technical_score, weight, volatility_tier):
+    qty = safe_float(position.get("qty"))
+    unrealized_pl = safe_float(position.get("unrealized_pl"))
+    pl_ratio = safe_float(position.get("pl_ratio"))
+    sell_pct = 0
+    buy_pct = 0
+    alert_type = None
+
+    if action == "trim":
+        sell_pct = 20
+        if risk_score >= 82:
+            sell_pct = 30
+        elif risk_score < 72:
+            sell_pct = 15
+        if weight >= 0.30:
+            sell_pct += 5
+        if volatility_tier in ("high", "extreme"):
+            sell_pct += 5
+        if pl_ratio > 0.35 or unrealized_pl > 0:
+            sell_pct += 5
+        alert_type = "sell"
+    elif action == "reduce_or_watch":
+        sell_pct = 10
+        if risk_score >= 65:
+            sell_pct = 20
+        if technical_score < 35:
+            sell_pct += 5
+        alert_type = "sell"
+    elif action == "add_candidate":
+        buy_pct = 10
+        if technical_score >= 78 and risk_score < 45:
+            buy_pct = 15
+        if volatility_tier in ("high", "extreme"):
+            buy_pct = max(5, buy_pct - 5)
+        alert_type = "buy"
+
+    sell_pct = int(max(0, min(50, sell_pct)))
+    buy_pct = int(max(0, min(20, buy_pct)))
+    sell_qty = round(qty * sell_pct / 100, 6) if sell_pct else 0
+    return {
+        "alert_type": alert_type,
+        "buy_percent": buy_pct,
+        "sell_percent": sell_pct,
+        "sell_qty": sell_qty,
+        "basis": "基于当前仓位、浮盈亏、波动率、技术面和组合集中度的分批建议",
+    }
+
+
 def score_position(
     position,
     daily_frame,
@@ -888,6 +948,7 @@ def score_position(
     reasons.extend(short_reasons)
     reasons.extend(shareholders_reasons)
     reasons.extend(insider_reasons)
+    trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier)
 
     return {
         "code": code,
@@ -914,11 +975,17 @@ def score_position(
             "insider_holders": insider_holders_summary(insider_holders),
         },
         "weight": round(weight, 4),
+        "qty": safe_float(position.get("qty")),
+        "cost_price": safe_float(position.get("cost_price")),
         "market_val": market_val,
         "close": close,
+        "realized_pl": safe_float(position.get("realized_pl")),
+        "unrealized_pl": safe_float(position.get("unrealized_pl")),
+        "pl_ratio": safe_float(position.get("pl_ratio")),
         "risk_score": risk_score,
         "technical_score": technical_score,
         "action": action,
+        "trade_plan": trade_plan,
         "suggestion": suggestion,
         "prediction": {
             "expected_volatility_30d": round(vol60 / math.sqrt(252) * math.sqrt(30), 4) if vol60 else 0,
@@ -988,6 +1055,89 @@ def correlation_summary(codes):
                 })
     pairs.sort(key=lambda item: abs(item["correlation"]), reverse=True)
     return {"pairs": pairs[:10]}
+
+
+def portfolio_rating(score):
+    if score >= 80:
+        return {"grade": "good", "label": "优秀", "description": "结构健康，可以按计划持有和观察机会"}
+    if score >= 65:
+        return {"grade": "healthy", "label": "良好", "description": "整体可接受，但仍需要控制新增仓位"}
+    if score >= 50:
+        return {"grade": "watch", "label": "观察", "description": "风险和集中度开始影响组合质量"}
+    if score >= 35:
+        return {"grade": "risk", "label": "偏高风险", "description": "应优先降低高风险或过度集中的仓位"}
+    return {"grade": "bad", "label": "危险", "description": "组合承压明显，先考虑防守和现金流"}
+
+
+def portfolio_score_summary(reports, portfolio_risk, exposure):
+    total_value = sum(item.get("market_val", 0) for item in reports)
+    unrealized_pl = sum(item.get("unrealized_pl", 0) for item in reports)
+    realized_pl = sum(item.get("realized_pl", 0) for item in reports)
+    cost_basis = sum(
+        max(0, item.get("market_val", 0) - item.get("unrealized_pl", 0))
+        for item in reports
+    )
+    total_pl = unrealized_pl + realized_pl
+    pl_ratio = total_pl / cost_basis if cost_basis > 0 else 0
+    concentration_penalty = max(exposure.values(), default=0) * 20
+    high_risk_penalty = sum(item.get("weight", 0) for item in reports if item.get("risk_score", 0) >= 70) * 25
+    profit_bonus = max(-10, min(10, pl_ratio * 40))
+    score = 100 - portfolio_risk * 0.45 - concentration_penalty - high_risk_penalty + profit_bonus
+    score = round(max(0, min(100, score)), 1)
+    rating = portfolio_rating(score)
+    return {
+        "score": score,
+        "rating": rating.get("grade"),
+        "rating_label": rating.get("label"),
+        "rating_description": rating.get("description"),
+        "ranges": [
+            {"min": 80, "max": 100, "rating": "good", "label": "优秀"},
+            {"min": 65, "max": 79, "rating": "healthy", "label": "良好"},
+            {"min": 50, "max": 64, "rating": "watch", "label": "观察"},
+            {"min": 35, "max": 49, "rating": "risk", "label": "偏高风险"},
+            {"min": 0, "max": 34, "rating": "bad", "label": "危险"},
+        ],
+        "pnl": {
+            "unrealized_pl": round(unrealized_pl, 2),
+            "realized_pl": round(realized_pl, 2),
+            "total_pl": round(total_pl, 2),
+            "pl_ratio": round(pl_ratio, 4),
+        },
+    }
+
+
+def build_position_alerts(reports, updated_at):
+    acks = set(load_alert_acks().get("acknowledged_ids", []))
+    alerts = []
+    for item in reports:
+        trade_plan = item.get("trade_plan", {})
+        alert_type = trade_plan.get("alert_type")
+        if alert_type not in ("buy", "sell"):
+            continue
+        if alert_type == "sell" and trade_plan.get("sell_percent", 0) <= 0:
+            continue
+        if alert_type == "buy" and trade_plan.get("buy_percent", 0) <= 0:
+            continue
+        alert_id = f"position:{item.get('code')}:{item.get('action')}:{updated_at[:10]}"
+        alerts.append({
+            "id": alert_id,
+            "source": "position",
+            "code": item.get("code"),
+            "name": item.get("name"),
+            "alert_type": alert_type,
+            "signal": item.get("action"),
+            "created_at": updated_at,
+            "price": item.get("close"),
+            "suggestion": item.get("suggestion"),
+            "reasons": item.get("reasons", [])[:5],
+            "trade_plan": trade_plan,
+            "technical_score": item.get("technical_score"),
+            "risk_score": item.get("risk_score"),
+            "unrealized_pl": item.get("unrealized_pl"),
+            "pl_ratio": item.get("pl_ratio"),
+            "acknowledged": alert_id in acks,
+        })
+    return alerts
 
 
 def sync_advisor_klines(force=False):
@@ -1173,9 +1323,12 @@ def build_advisor_report(force_sync=False):
         if weight >= 0.45:
             portfolio_reasons.append(f"{sector} 暴露达到 {weight:.0%}，板块集中度偏高")
 
+    updated_at = utc_now_iso()
+    score_summary = portfolio_score_summary(reports, portfolio_risk, exposure)
+    position_alerts = build_position_alerts(reports, updated_at)
     report = {
         "ok": True,
-        "updated_at": utc_now_iso(),
+        "updated_at": updated_at,
         "model": {
             "type": "rule_based_advisor_v1",
             "weights": state["weights"],
@@ -1189,7 +1342,14 @@ def build_advisor_report(force_sync=False):
             "sector_exposure": exposure,
             "correlation": correlation_summary([item.get("code") for item in reports]),
             "reasons": portfolio_reasons,
+            "score": score_summary["score"],
+            "rating": score_summary["rating"],
+            "rating_label": score_summary["rating_label"],
+            "rating_description": score_summary["rating_description"],
+            "score_ranges": score_summary["ranges"],
+            "pnl": score_summary["pnl"],
         },
+        "alerts": position_alerts,
         "positions": sorted(reports, key=lambda item: item.get("risk_score", 0), reverse=True),
     }
     write_json(ADVISOR_REPORT_FILE, report)
@@ -1206,11 +1366,17 @@ def compact_position_advice(position):
         "name": position.get("name"),
         "sector": position.get("sector"),
         "weight": position.get("weight"),
+        "qty": position.get("qty"),
+        "cost_price": position.get("cost_price"),
         "market_val": position.get("market_val"),
         "close": position.get("close"),
+        "realized_pl": position.get("realized_pl"),
+        "unrealized_pl": position.get("unrealized_pl"),
+        "pl_ratio": position.get("pl_ratio"),
         "risk_score": position.get("risk_score"),
         "technical_score": position.get("technical_score"),
         "action": position.get("action"),
+        "trade_plan": position.get("trade_plan", {}),
         "suggestion": position.get("suggestion"),
         "reasons": position.get("reasons", []),
         "prediction": position.get("prediction", {}),
@@ -1243,6 +1409,12 @@ def compact_report(report):
         "portfolio": {
             "market_value": portfolio.get("market_value"),
             "risk_score": portfolio.get("risk_score"),
+            "score": portfolio.get("score"),
+            "rating": portfolio.get("rating"),
+            "rating_label": portfolio.get("rating_label"),
+            "rating_description": portfolio.get("rating_description"),
+            "score_ranges": portfolio.get("score_ranges", []),
+            "pnl": portfolio.get("pnl", {}),
             "max_position_weight": portfolio.get("max_position_weight"),
             "high_risk_weight": portfolio.get("high_risk_weight"),
             "sector_exposure": portfolio.get("sector_exposure", {}),
@@ -1253,6 +1425,10 @@ def compact_report(report):
         "positions": [
             compact_position_advice(item)
             for item in report.get("positions", [])
+        ],
+        "alerts": [
+            item for item in report.get("alerts", [])
+            if not item.get("acknowledged")
         ],
     }
 
@@ -1481,6 +1657,7 @@ def refresh_watchlist(force_sync=False):
 
 def get_watch_alerts(include_acknowledged=False):
     payload = load_watchlist()
+    acked_ids = set(load_alert_acks().get("acknowledged_ids", []))
     alerts = []
     for code, item in payload.get("symbols", {}).items():
         if item.get("status", "active") != "active":
@@ -1488,13 +1665,24 @@ def get_watch_alerts(include_acknowledged=False):
         alert = item.get("last_alert")
         if not alert:
             continue
+        alert["source"] = "watchlist"
+        alert["alert_type"] = "buy"
         if alert.get("acknowledged") and not include_acknowledged:
             continue
         alerts.append(alert)
+
+    report = load_latest_report()
+    for alert in report.get("alerts", []):
+        if alert.get("id") in acked_ids:
+            alert["acknowledged"] = True
+        if alert.get("acknowledged") and not include_acknowledged:
+            continue
+        alerts.append(alert)
+
     alerts.sort(key=lambda item: item.get("created_at", ""), reverse=True)
     return {
         "ok": True,
-        "updated_at": payload.get("updated_at"),
+        "updated_at": max(payload.get("updated_at", ""), report.get("updated_at", "")),
         "count": len(alerts),
         "alerts": alerts,
     }
@@ -1502,6 +1690,8 @@ def get_watch_alerts(include_acknowledged=False):
 
 def acknowledge_watch_alert(symbol=None, alert_id=None):
     payload = load_watchlist()
+    ack_payload = load_alert_acks()
+    acked_ids = set(ack_payload.get("acknowledged_ids", []))
     changed = 0
     for code, item in payload.get("symbols", {}).items():
         if symbol and code != normalize_symbol(symbol):
@@ -1514,8 +1704,18 @@ def acknowledge_watch_alert(symbol=None, alert_id=None):
         alert["acknowledged"] = True
         alert["acknowledged_at"] = utc_now_iso()
         changed += 1
+    report = load_latest_report()
+    for alert in report.get("alerts", []):
+        if symbol and alert.get("code") != normalize_symbol(symbol):
+            continue
+        if alert_id and alert.get("id") != alert_id:
+            continue
+        acked_ids.add(alert.get("id"))
+        changed += 1
     if changed:
         save_watchlist(payload)
+        ack_payload["acknowledged_ids"] = sorted(item for item in acked_ids if item)
+        save_alert_acks(ack_payload)
     return {
         "ok": True,
         "acknowledged": changed,
