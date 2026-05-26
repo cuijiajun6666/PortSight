@@ -43,6 +43,7 @@ from advisor_profile import (
     sync_valuations,
 )
 from config import DATA_DIR, HOST, PORT
+from asset_snapshots import get_latest_closed_trading_date
 from routes.positions import get_positions
 
 
@@ -1550,6 +1551,115 @@ def fetch_live_quotes(codes):
             "data_time": str(row.get("data_time", "")),
         }
     return quotes
+
+
+def frame_tail_records(frame, limit=5):
+    if frame.empty:
+        return []
+    rows = []
+    for _, row in frame.tail(limit).iterrows():
+        rows.append({
+            "date": str(row.get("date", "")),
+            "time_key": str(row.get("time_key", "")),
+            "open": safe_float(row.get("open"), None),
+            "high": safe_float(row.get("high"), None),
+            "low": safe_float(row.get("low"), None),
+            "close": safe_float(row.get("close"), None),
+            "volume": safe_float(row.get("volume"), None),
+            "turnover": safe_float(row.get("turnover"), None),
+        })
+    return rows
+
+
+def latest_row_date(rows):
+    if not rows:
+        return None
+    return rows[-1].get("date")
+
+
+def request_raw_kline_tail(code, autype, limit=5):
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        ret, data, _ = quote_ctx.request_history_kline(
+            code,
+            start=None,
+            end=None,
+            ktype=KLType.K_DAY,
+            autype=autype,
+            max_count=max(10, limit),
+        )
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        return {
+            "ok": False,
+            "error": str(data),
+            "rows": [],
+        }
+    frame = data.copy()
+    if "time_key" in frame.columns:
+        frame["date"] = pd.to_datetime(frame["time_key"]).dt.date.astype(str)
+    return {
+        "ok": True,
+        "rows": frame_tail_records(frame, limit=limit),
+    }
+
+
+def get_raw_kline_debug(symbols=None, limit=5):
+    if symbols:
+        codes = [normalize_symbol(symbol) for symbol in symbols.split(",") if symbol.strip()]
+        positions = [{"code": code, "name": code} for code in codes]
+    else:
+        positions_result = get_positions()
+        if not positions_result.get("ok"):
+            return positions_result
+        positions = positions_result.get("positions", [])
+        codes = [position.get("code") for position in positions if position.get("code")]
+
+    try:
+        quotes = fetch_live_quotes(codes)
+    except Exception as exc:
+        quotes = {}
+        quote_error = str(exc)
+    else:
+        quote_error = None
+
+    autypes = [
+        ("NONE", AuType.NONE),
+        ("QFQ", AuType.QFQ),
+        ("HFQ", AuType.HFQ),
+    ]
+    expected_latest = get_latest_closed_trading_date()
+    expected_latest_str = expected_latest.isoformat() if expected_latest else None
+    results = []
+    for position in positions:
+        code = position.get("code")
+        if not code:
+            continue
+        variants = {
+            name: request_raw_kline_tail(code, autype, limit=limit)
+            for name, autype in autypes
+        }
+        for payload in variants.values():
+            latest_date = latest_row_date(payload.get("rows", []))
+            payload["latest_date"] = latest_date
+            payload["expected_latest_trading_date"] = expected_latest_str
+            payload["is_latest_expected"] = latest_date == expected_latest_str if latest_date and expected_latest_str else None
+        results.append({
+            "code": code,
+            "name": position.get("name"),
+            "quote": quotes.get(code),
+            "quote_error": quote_error,
+            "kline_variants": variants,
+        })
+    return {
+        "ok": True,
+        "count": len(results),
+        "limit": limit,
+        "expected_latest_trading_date": expected_latest_str,
+        "positions": results,
+    }
 
 
 def price_triggered(price, trigger_price, condition):

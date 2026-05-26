@@ -7,6 +7,7 @@ from advisor_engine import (
     build_candidate_advice,
     get_advisor_summary,
     get_positions_indicator_debug,
+    get_raw_kline_debug,
     get_symbol_advice,
     get_watch_alerts,
     load_advisor_state,
@@ -71,6 +72,11 @@ def get_summary(refresh: bool = False):
 @router.get("/advisor/debug/indicators")
 def get_advisor_indicator_debug(force_sync: bool = False):
     return get_positions_indicator_debug(force_sync=force_sync)
+
+
+@router.get("/advisor/debug/raw_klines")
+def get_advisor_raw_kline_debug(symbols: str | None = None, limit: int = 5):
+    return get_raw_kline_debug(symbols=symbols, limit=limit)
 
 
 @router.get("/advisor/symbol")
