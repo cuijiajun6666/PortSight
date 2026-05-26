@@ -11,6 +11,7 @@ from advisor_engine import (
     load_advisor_state,
     load_latest_report,
     load_watchlist,
+    monitor_advisor_price_alerts,
     refresh_watchlist,
     sync_advisor_klines,
     sync_advisor_profiles,
@@ -102,6 +103,11 @@ def get_advisor_alerts(include_acknowledged: bool = False):
 @router.post("/advisor/alerts/ack")
 def post_advisor_alert_ack(symbol: str | None = None, alert_id: str | None = None):
     return acknowledge_watch_alert(symbol=symbol, alert_id=alert_id)
+
+
+@router.post("/advisor/alerts/monitor")
+def post_advisor_alert_monitor():
+    return monitor_advisor_price_alerts()
 
 
 @router.patch("/advisor/watchlist")

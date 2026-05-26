@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone
 
 import pandas as pd
+from moomoo import *
 
 from advisor_kline_cache import (
     get_daily_klines,
@@ -41,7 +42,7 @@ from advisor_profile import (
     sync_short_interests,
     sync_valuations,
 )
-from config import DATA_DIR
+from config import DATA_DIR, HOST, PORT
 from routes.positions import get_positions
 
 
@@ -50,6 +51,7 @@ ADVISOR_REPORT_FILE = DATA_DIR / "advisor_report.json"
 SYMBOL_META_FILE = DATA_DIR / "advisor_symbol_meta.json"
 ADVISOR_WATCHLIST_FILE = DATA_DIR / "advisor_watchlist.json"
 ADVISOR_ALERT_ACKS_FILE = DATA_DIR / "advisor_alert_acks.json"
+ADVISOR_TRIGGER_ALERTS_FILE = DATA_DIR / "advisor_trigger_alerts.json"
 
 DEFAULT_WEIGHTS = {
     "trend": 0.28,
@@ -142,6 +144,18 @@ def load_alert_acks():
 def save_alert_acks(payload):
     payload["updated_at"] = utc_now_iso()
     write_json(ADVISOR_ALERT_ACKS_FILE, payload)
+
+
+def load_trigger_alerts():
+    payload = read_json(ADVISOR_TRIGGER_ALERTS_FILE, {})
+    payload.setdefault("updated_at", utc_now_iso())
+    payload.setdefault("alerts", [])
+    return payload
+
+
+def save_trigger_alerts(payload):
+    payload["updated_at"] = utc_now_iso()
+    write_json(ADVISOR_TRIGGER_ALERTS_FILE, payload)
 
 
 def safe_float(value, default=0.0):
@@ -733,13 +747,20 @@ def insider_risk_adjustment(insider_trades, insider_holders):
     return adjustment, reasons
 
 
-def position_trade_plan(position, action, risk_score, technical_score, weight, volatility_tier):
+def position_trade_plan(position, action, risk_score, technical_score, weight, volatility_tier, close, daily_frame):
     qty = safe_float(position.get("qty"))
     unrealized_pl = safe_float(position.get("unrealized_pl"))
     pl_ratio = safe_float(position.get("pl_ratio"))
     sell_pct = 0
     buy_pct = 0
     alert_type = None
+    trigger_price = None
+    trigger_condition = None
+    recent_high = 0
+    recent_low = 0
+    if not daily_frame.empty:
+        recent_high = safe_float(daily_frame.tail(20)["high"].max())
+        recent_low = safe_float(daily_frame.tail(20)["low"].min())
 
     if action == "trim":
         sell_pct = 20
@@ -754,6 +775,11 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
         if pl_ratio > 0.35 or unrealized_pl > 0:
             sell_pct += 5
         alert_type = "sell"
+        target = close * 1.03 if close > 0 else 0
+        if recent_high > 0:
+            target = max(target, min(recent_high * 0.995, close * 1.08))
+        trigger_price = round(target, 4) if target > 0 else None
+        trigger_condition = "price_at_or_above"
     elif action == "reduce_or_watch":
         sell_pct = 10
         if risk_score >= 65:
@@ -761,6 +787,11 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
         if technical_score < 35:
             sell_pct += 5
         alert_type = "sell"
+        target = close * 1.01 if close > 0 else 0
+        if recent_low > 0 and close > recent_low * 1.08:
+            target = max(target, close * 1.02)
+        trigger_price = round(target, 4) if target > 0 else None
+        trigger_condition = "price_at_or_above"
     elif action == "add_candidate":
         buy_pct = 10
         if technical_score >= 78 and risk_score < 45:
@@ -768,6 +799,11 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
         if volatility_tier in ("high", "extreme"):
             buy_pct = max(5, buy_pct - 5)
         alert_type = "buy"
+        target = close * 0.985 if close > 0 else 0
+        if recent_low > 0:
+            target = max(recent_low * 1.01, min(target, close))
+        trigger_price = round(target, 4) if target > 0 else None
+        trigger_condition = "price_at_or_below"
 
     sell_pct = int(max(0, min(50, sell_pct)))
     buy_pct = int(max(0, min(20, buy_pct)))
@@ -777,6 +813,8 @@ def position_trade_plan(position, action, risk_score, technical_score, weight, v
         "buy_percent": buy_pct,
         "sell_percent": sell_pct,
         "sell_qty": sell_qty,
+        "trigger_price": trigger_price,
+        "trigger_condition": trigger_condition,
         "basis": "基于当前仓位、浮盈亏、波动率、技术面和组合集中度的分批建议",
     }
 
@@ -948,7 +986,7 @@ def score_position(
     reasons.extend(short_reasons)
     reasons.extend(shareholders_reasons)
     reasons.extend(insider_reasons)
-    trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier)
+    trade_plan = position_trade_plan(position, action, risk_score, technical_score, weight, vol_tier, close, daily_frame)
 
     return {
         "code": code,
@@ -1131,6 +1169,7 @@ def build_position_alerts(reports, updated_at):
             "suggestion": item.get("suggestion"),
             "reasons": item.get("reasons", [])[:5],
             "trade_plan": trade_plan,
+            "triggered": False,
             "technical_score": item.get("technical_score"),
             "risk_score": item.get("risk_score"),
             "unrealized_pl": item.get("unrealized_pl"),
@@ -1138,6 +1177,122 @@ def build_position_alerts(reports, updated_at):
             "acknowledged": alert_id in acks,
         })
     return alerts
+
+
+def fetch_live_quotes(codes):
+    clean_codes = sorted({normalize_symbol(code) for code in codes if normalize_symbol(code)})
+    if not clean_codes:
+        return {}
+    quote_ctx = OpenQuoteContext(host=HOST, port=PORT)
+    try:
+        quote_ctx.subscribe(
+            clean_codes,
+            [SubType.QUOTE],
+            subscribe_push=False,
+            extended_time=True,
+        )
+        ret, data = quote_ctx.get_stock_quote(clean_codes)
+    finally:
+        quote_ctx.close()
+
+    if ret != RET_OK:
+        raise RuntimeError(f"get_stock_quote failed: {data}")
+    quotes = {}
+    for _, row in data.iterrows():
+        code = str(row.get("code", ""))
+        price = safe_float(row.get("last_price"))
+        if price <= 0:
+            price = safe_float(row.get("after_price"))
+        if price <= 0:
+            price = safe_float(row.get("pre_price"))
+        if price <= 0:
+            price = safe_float(row.get("prev_close_price"))
+        quotes[code] = {
+            "code": code,
+            "price": price,
+            "data_date": str(row.get("data_date", "")),
+            "data_time": str(row.get("data_time", "")),
+        }
+    return quotes
+
+
+def price_triggered(price, trigger_price, condition):
+    if price <= 0 or not trigger_price:
+        return False
+    if condition == "price_at_or_above":
+        return price >= trigger_price
+    if condition == "price_at_or_below":
+        return price <= trigger_price
+    return False
+
+
+def monitor_advisor_price_alerts():
+    report = load_latest_report()
+    if not report.get("ok"):
+        return {"ok": False, "error": "advisor report not generated yet"}
+
+    candidates = []
+    for item in report.get("positions", []):
+        trade_plan = item.get("trade_plan", {})
+        if not trade_plan.get("trigger_price") or not trade_plan.get("trigger_condition"):
+            continue
+        candidates.append(item)
+    if not candidates:
+        return {"ok": True, "created": 0, "alerts": []}
+
+    quotes = fetch_live_quotes([item.get("code") for item in candidates])
+    payload = load_trigger_alerts()
+    alerts = payload.setdefault("alerts", [])
+    existing_ids = {alert.get("id") for alert in alerts}
+    acked_ids = set(load_alert_acks().get("acknowledged_ids", []))
+    created = []
+    now = utc_now_iso()
+
+    for item in candidates:
+        code = item.get("code")
+        quote = quotes.get(code, {})
+        price = safe_float(quote.get("price"))
+        trade_plan = item.get("trade_plan", {})
+        trigger_price = safe_float(trade_plan.get("trigger_price"))
+        condition = trade_plan.get("trigger_condition")
+        if not price_triggered(price, trigger_price, condition):
+            continue
+        alert_id = f"trigger:{code}:{item.get('action')}:{now[:10]}"
+        if alert_id in existing_ids or alert_id in acked_ids:
+            continue
+        alert = {
+            "id": alert_id,
+            "source": "price_trigger",
+            "code": code,
+            "name": item.get("name"),
+            "alert_type": trade_plan.get("alert_type"),
+            "signal": item.get("action"),
+            "created_at": now,
+            "price": price,
+            "trigger_price": trigger_price,
+            "trigger_condition": condition,
+            "quote_time": f"{quote.get('data_date', '')} {quote.get('data_time', '')}".strip(),
+            "suggestion": item.get("suggestion"),
+            "reasons": item.get("reasons", [])[:5],
+            "trade_plan": trade_plan,
+            "technical_score": item.get("technical_score"),
+            "risk_score": item.get("risk_score"),
+            "unrealized_pl": item.get("unrealized_pl"),
+            "pl_ratio": item.get("pl_ratio"),
+            "acknowledged": False,
+        }
+        alerts.append(alert)
+        created.append(alert)
+        existing_ids.add(alert_id)
+
+    if created:
+        payload["alerts"] = alerts[-200:]
+        save_trigger_alerts(payload)
+    return {
+        "ok": True,
+        "created": len(created),
+        "alerts": created,
+    }
 
 
 def sync_advisor_klines(force=False):
@@ -1671,8 +1826,8 @@ def get_watch_alerts(include_acknowledged=False):
             continue
         alerts.append(alert)
 
-    report = load_latest_report()
-    for alert in report.get("alerts", []):
+    trigger_payload = load_trigger_alerts()
+    for alert in trigger_payload.get("alerts", []):
         if alert.get("id") in acked_ids:
             alert["acknowledged"] = True
         if alert.get("acknowledged") and not include_acknowledged:
@@ -1682,7 +1837,7 @@ def get_watch_alerts(include_acknowledged=False):
     alerts.sort(key=lambda item: item.get("created_at", ""), reverse=True)
     return {
         "ok": True,
-        "updated_at": max(payload.get("updated_at", ""), report.get("updated_at", "")),
+        "updated_at": max(payload.get("updated_at", ""), trigger_payload.get("updated_at", "")),
         "count": len(alerts),
         "alerts": alerts,
     }
@@ -1704,16 +1859,19 @@ def acknowledge_watch_alert(symbol=None, alert_id=None):
         alert["acknowledged"] = True
         alert["acknowledged_at"] = utc_now_iso()
         changed += 1
-    report = load_latest_report()
-    for alert in report.get("alerts", []):
+    trigger_payload = load_trigger_alerts()
+    for alert in trigger_payload.get("alerts", []):
         if symbol and alert.get("code") != normalize_symbol(symbol):
             continue
         if alert_id and alert.get("id") != alert_id:
             continue
         acked_ids.add(alert.get("id"))
+        alert["acknowledged"] = True
+        alert["acknowledged_at"] = utc_now_iso()
         changed += 1
     if changed:
         save_watchlist(payload)
+        save_trigger_alerts(trigger_payload)
         ack_payload["acknowledged_ids"] = sorted(item for item in acked_ids if item)
         save_alert_acks(ack_payload)
     return {

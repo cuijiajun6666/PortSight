@@ -15,6 +15,7 @@ data/*
 !data/advisor_training_samples.json
 !data/advisor_watchlist.json
 !data/advisor_alert_acks.json
+!data/advisor_trigger_alerts.json
 !data/advisor_owner_plates.json
 !data/advisor_valuations.json
 !data/advisor_financials.json

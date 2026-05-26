@@ -13,7 +13,7 @@ from routes.orders import router as orders_router
 from routes.advisor import router as advisor_router
 from market_rt_data import sync_market_intraday_cache
 from deal_cache import start_deal_push_listener, stop_deal_push_listener
-from advisor_engine import build_advisor_report, refresh_watchlist, sync_advisor_klines, sync_advisor_profiles
+from advisor_engine import build_advisor_report, monitor_advisor_price_alerts, refresh_watchlist, sync_advisor_klines, sync_advisor_profiles
 from advisor_training import record_training_samples, update_training_targets
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
@@ -94,6 +94,15 @@ def refresh_advisor_after_close():
         print(f"智能持仓建议刷新失败: {exc}")
 
 
+def monitor_advisor_alerts_if_needed():
+    try:
+        result = monitor_advisor_price_alerts()
+        if result.get("created", 0):
+            print(f"Advisor 价格触发提醒: {result.get('created')} 条")
+    except Exception as exc:
+        print(f"Advisor 价格提醒监控失败: {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     trd_ctx = OpenSecTradeContext(
@@ -130,6 +139,13 @@ async def lifespan(app: FastAPI):
         minute=25,
         timezone=ZoneInfo("America/New_York"),
         id="advisor_after_close",
+        replace_existing=True
+    )
+    scheduler.add_job(
+        monitor_advisor_alerts_if_needed,
+        "interval",
+        minutes=5,
+        id="advisor_price_alert_monitor",
         replace_existing=True
     )
     scheduler.start()

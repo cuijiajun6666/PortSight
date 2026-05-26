@@ -198,6 +198,7 @@ curl "http://127.0.0.1:8000/advisor/candidate?symbol=US.SIDU&refresh=true"
 curl -X POST "http://127.0.0.1:8000/advisor/watchlist?symbol=US.SIDU&note=SpaceX%20sentiment"
 curl "http://127.0.0.1:8000/advisor/watchlist?refresh=true"
 curl "http://127.0.0.1:8000/advisor/alerts"
+curl -X POST "http://127.0.0.1:8000/advisor/alerts/monitor"
 curl -X POST "http://127.0.0.1:8000/advisor/alerts/ack?symbol=US.SIDU"
 curl -X PATCH "http://127.0.0.1:8000/advisor/watchlist?symbol=US.SIDU&status=paused"
 curl -X PATCH "http://127.0.0.1:8000/advisor/watchlist?symbol=US.SIDU&delete=true"
@@ -209,9 +210,9 @@ curl -X POST "http://127.0.0.1:8000/advisor/training_samples/update_targets"
 curl "http://127.0.0.1:8000/advisor/training_samples?limit=50"
 ```
 
-`/advisor/summary` is the frontend-friendly compact response for portfolio advice and per-position advice. It includes `portfolio.score`, `portfolio.rating_label`, `portfolio.pnl`, and each position's `trade_plan`. `/advisor/candidate` analyzes a symbol even if it is not in current positions and does not save it. `/advisor/watchlist` keeps a short observation pool for buy candidates: it gives an immediate historical-K-line judgment, then records daily observations. `/advisor/alerts` returns active watchlist buy alerts and current-position buy/sell alerts. Sell alerts include a suggested sell percentage and quantity. Pausing a symbol keeps its cached history; deleting removes it from the active watchlist.
+`/advisor/summary` is the frontend-friendly compact response for portfolio advice and per-position advice. It includes `portfolio.score`, `portfolio.rating_label`, `portfolio.pnl`, and each position's `trade_plan`. The trade plan includes suggested buy/sell percentages and a trigger price. `/advisor/candidate` analyzes a symbol even if it is not in current positions and does not save it. `/advisor/watchlist` keeps a short observation pool for buy candidates: it gives an immediate historical-K-line judgment, then records daily observations. `/advisor/alerts` returns active watchlist buy alerts and realtime price-triggered current-position buy/sell alerts. Sell alerts include the live price, trigger price, suggested sell percentage, and suggested quantity. Pausing a symbol keeps its cached history; deleting removes it from the active watchlist.
 
-The backend also runs an advisor refresh job on weekdays at `16:25 America/New_York`, after the market close snapshot. This job refreshes current-position advice, updates active watchlist observations, records training samples, and backfills expired prediction targets.
+The backend also runs an advisor refresh job on weekdays at `16:25 America/New_York`, after the market close snapshot. This job refreshes current-position advice, updates active watchlist observations, records training samples, and backfills expired prediction targets. A separate realtime price monitor checks advisor trigger prices every 5 minutes.
 
 Tracked advisor runtime config:
 
@@ -221,6 +222,7 @@ data/advisor_symbol_meta.json
 data/advisor_training_samples.json
 data/advisor_watchlist.json
 data/advisor_alert_acks.json
+data/advisor_trigger_alerts.json
 ```
 
 Ignored advisor cache:
