@@ -1,33 +1,20 @@
-.venv/
-__pycache__/
-*.py[cod]
+# macOS
 .DS_Store
-.idea/
 
-# Runtime data should usually be backed up/deployed separately from code.
-data/*
-*.json
-!data/
-!data/asset_snapshots.json
-!data/trade_deals.json
-!data/advisor_state.json
-!data/advisor_symbol_meta.json
-!data/advisor_training_samples.json
-!data/advisor_model.json
-!data/advisor_watchlist.json
-!data/advisor_alert_acks.json
-!data/advisor_trigger_alerts.json
-!data/advisor_owner_plates.json
-!data/advisor_valuations.json
-!data/advisor_financials.json
-!data/advisor_earnings_moves.json
-!data/advisor_company_profiles.json
-!data/advisor_operational_efficiency.json
-!data/advisor_capital_flow.json
-!data/advisor_capital_distribution.json
-!data/advisor_daily_short_volume.json
-!data/advisor_short_interest.json
-!data/advisor_shareholders_overview.json
-!data/advisor_shareholders_changes.json
-!data/advisor_insider_trades.json
-!data/advisor_insider_holders.json
+# Xcode user-specific state and build outputs
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# Local app credentials and environment files
+.env
+.env.*
+!.env.example
+frontend/Config/LocalSecrets.xcconfig
+
+# Python
+backend/.venv/
+backend/**/__pycache__/
+backend/**/*.py[cod]
+

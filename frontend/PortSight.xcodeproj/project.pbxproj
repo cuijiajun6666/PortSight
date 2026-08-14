@@ -1,0 +1,777 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		C2387A642FB8B30D00729396 /* PortSight.icon in Resources */ = {isa = PBXBuildFile; fileRef = C2387A612FB8B30D00729396 /* PortSight.icon */; };
+		C2387A662FB8B30D00729396 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C2387A5D2FB8B30D00729396 /* Assets.xcassets */; };
+		C2387A672FB8B30D00729396 /* AsseetDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A572FB8B30D00729396 /* AsseetDetailView.swift */; };
+		C2387A682FB8B30D00729396 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A592FB8B30D00729396 /* DashboardView.swift */; };
+		C2387A692FB8B30D00729396 /* PortfolioToolbarHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A532FB8B30D00729396 /* PortfolioToolbarHeader.swift */; };
+		C2387A6A2FB8B30D00729396 /* AssetViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A422FB8B30D00729396 /* AssetViewModel.swift */; };
+		C2387A6B2FB8B30D00729396 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A582FB8B30D00729396 /* ContentView.swift */; };
+		C2387A6C2FB8B30D00729396 /* 统一资产模型.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A4D2FB8B30D00729396 /* 统一资产模型.swift */; };
+		C2387A6D2FB8B30D00729396 /* AssetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A512FB8B30D00729396 /* AssetSnapshot.swift */; };
+		C2387A6E2FB8B30D00729396 /* MarketStatusResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A432FB8B30D00729396 /* MarketStatusResponse.swift */; };
+		C2387A6F2FB8B30D00729396 /* OKXClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A472FB8B30D00729396 /* OKXClient.swift */; };
+		C2387A702FB8B30D00729396 /* PricesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A492FB8B30D00729396 /* PricesViewModel.swift */; };
+		C2387A712FB8B30D00729396 /* PositionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A442FB8B30D00729396 /* PositionsViewModel.swift */; };
+		C2387A722FB8B30D00729396 /* PortSightApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A622FB8B30D00729396 /* PortSightApp.swift */; };
+		C2387A732FB8B30D00729396 /* 圆环图+权重条.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A4F2FB8B30D00729396 /* 圆环图+权重条.swift */; };
+		C2387A742FB8B30D00729396 /* MarketView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A5A2FB8B30D00729396 /* MarketView.swift */; };
+		C2387A752FB8B30D00729396 /* 缓存.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A4C2FB8B30D00729396 /* 缓存.swift */; };
+		C2387A762FB8B30D00729396 /* AccountResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A412FB8B30D00729396 /* AccountResponse.swift */; };
+		C2387A772FB8B30D00729396 /* AnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A552FB8B30D00729396 /* AnalysisView.swift */; };
+		C2387A782FB8B30D00729396 /* PositionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A5B2FB8B30D00729396 /* PositionsView.swift */; };
+		C2387A792FB8B30D00729396 /* OKXModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A482FB8B30D00729396 /* OKXModel.swift */; };
+		C2387A7A2FB8B30D00729396 /* QuoteViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A452FB8B30D00729396 /* QuoteViewModel.swift */; };
+		C2387A7B2FB8B30D00729396 /* 设置？.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A562FB8B30D00729396 /* 设置？.swift */; };
+		C2387A7C2FB8B30D00729396 /* 资产走势图.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A502FB8B30D00729396 /* 资产走势图.swift */; };
+		C2387A7D2FB8B30D00729396 /* Item.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A5F2FB8B30D00729396 /* Item.swift */; };
+		C2387A7E2FB8B30D00729396 /* SpotAccountViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A4A2FB8B30D00729396 /* SpotAccountViewModel.swift */; };
+		C2387A802FB8B4A400729396 /* CompanyLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A7F2FB8B4A400729396 /* CompanyLogo.swift */; };
+		C2387A822FB8BBA100729396 /* logo颜色提取.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A812FB8BB9900729396 /* logo颜色提取.swift */; };
+		C2387A8A2FB96E1C00729396 /* 分时图.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A892FB96E1900729396 /* 分时图.swift */; };
+		C2387A8C2FC0000000729396 /* BackendConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A8B2FC0000000729396 /* BackendConfig.swift */; };
+		C2387A8E2FC1000000729396 /* OrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A8D2FC1000000729396 /* OrdersView.swift */; };
+		C2387A902FC2000000729396 /* AdvisorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2387A8F2FC2000000729396 /* AdvisorViewModel.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C2387A232FB8B29B00729396 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C2387A092FB8B29A00729396 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C2387A102FB8B29A00729396;
+			remoteInfo = PortSight;
+		};
+		C2387A2D2FB8B29B00729396 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C2387A092FB8B29A00729396 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C2387A102FB8B29A00729396;
+			remoteInfo = PortSight;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		C2387A112FB8B29A00729396 /* PortSight.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PortSight.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C2387A222FB8B29B00729396 /* PortSightTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PortSightTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C2387A2C2FB8B29B00729396 /* PortSightUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PortSightUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C2387A412FB8B30D00729396 /* AccountResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountResponse.swift; sourceTree = "<group>"; };
+		C2387A422FB8B30D00729396 /* AssetViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetViewModel.swift; sourceTree = "<group>"; };
+		C2387A432FB8B30D00729396 /* MarketStatusResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStatusResponse.swift; sourceTree = "<group>"; };
+		C2387A442FB8B30D00729396 /* PositionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionsViewModel.swift; sourceTree = "<group>"; };
+		C2387A452FB8B30D00729396 /* QuoteViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteViewModel.swift; sourceTree = "<group>"; };
+		C2387A472FB8B30D00729396 /* OKXClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OKXClient.swift; sourceTree = "<group>"; };
+		C2387A482FB8B30D00729396 /* OKXModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OKXModel.swift; sourceTree = "<group>"; };
+		C2387A492FB8B30D00729396 /* PricesViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PricesViewModel.swift; sourceTree = "<group>"; };
+		C2387A4A2FB8B30D00729396 /* SpotAccountViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotAccountViewModel.swift; sourceTree = "<group>"; };
+		C2387A4C2FB8B30D00729396 /* 缓存.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "缓存.swift"; sourceTree = "<group>"; };
+		C2387A4D2FB8B30D00729396 /* 统一资产模型.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "统一资产模型.swift"; sourceTree = "<group>"; };
+		C2387A4F2FB8B30D00729396 /* 圆环图+权重条.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "圆环图+权重条.swift"; sourceTree = "<group>"; };
+		C2387A502FB8B30D00729396 /* 资产走势图.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "资产走势图.swift"; sourceTree = "<group>"; };
+		C2387A512FB8B30D00729396 /* AssetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetSnapshot.swift; sourceTree = "<group>"; };
+		C2387A532FB8B30D00729396 /* PortfolioToolbarHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioToolbarHeader.swift; sourceTree = "<group>"; };
+		C2387A552FB8B30D00729396 /* AnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisView.swift; sourceTree = "<group>"; };
+		C2387A562FB8B30D00729396 /* 设置？.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "设置？.swift"; sourceTree = "<group>"; };
+		C2387A572FB8B30D00729396 /* AsseetDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsseetDetailView.swift; sourceTree = "<group>"; };
+		C2387A582FB8B30D00729396 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		C2387A592FB8B30D00729396 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		C2387A5A2FB8B30D00729396 /* MarketView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketView.swift; sourceTree = "<group>"; };
+		C2387A5B2FB8B30D00729396 /* PositionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositionsView.swift; sourceTree = "<group>"; };
+		C2387A5D2FB8B30D00729396 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C2387A5E2FB8B30D00729396 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C2387A5F2FB8B30D00729396 /* Item.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Item.swift; sourceTree = "<group>"; };
+		C2387A602FB8B30D00729396 /* PortSight.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PortSight.entitlements; sourceTree = "<group>"; };
+		C2387A612FB8B30D00729396 /* PortSight.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = PortSight.icon; sourceTree = "<group>"; };
+		C2387A622FB8B30D00729396 /* PortSightApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortSightApp.swift; sourceTree = "<group>"; };
+		C2387A7F2FB8B4A400729396 /* CompanyLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanyLogo.swift; sourceTree = "<group>"; };
+		C2387A812FB8BB9900729396 /* logo颜色提取.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "logo颜色提取.swift"; sourceTree = "<group>"; };
+		C2387A892FB96E1900729396 /* 分时图.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "分时图.swift"; sourceTree = "<group>"; };
+		C2387A8B2FC0000000729396 /* BackendConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendConfig.swift; sourceTree = "<group>"; };
+		C2387A8D2FC1000000729396 /* OrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrdersView.swift; sourceTree = "<group>"; };
+		C2387A8F2FC2000000729396 /* AdvisorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvisorViewModel.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		C2387A252FB8B29B00729396 /* PortSightTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PortSightTests;
+			sourceTree = "<group>";
+		};
+		C2387A2F2FB8B29B00729396 /* PortSightUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PortSightUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C2387A0E2FB8B29A00729396 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C2387A1F2FB8B29B00729396 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C2387A292FB8B29B00729396 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C2387A082FB8B29A00729396 = {
+			isa = PBXGroup;
+			children = (
+				C2387A632FB8B30D00729396 /* PortSight */,
+				C2387A252FB8B29B00729396 /* PortSightTests */,
+				C2387A2F2FB8B29B00729396 /* PortSightUITests */,
+				C2387A122FB8B29A00729396 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C2387A122FB8B29A00729396 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C2387A112FB8B29A00729396 /* PortSight.app */,
+				C2387A222FB8B29B00729396 /* PortSightTests.xctest */,
+				C2387A2C2FB8B29B00729396 /* PortSightUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C2387A402FB8B30D00729396 /* 连接 */ = {
+			isa = PBXGroup;
+			children = (
+				C2387A8B2FC0000000729396 /* BackendConfig.swift */,
+			);
+			path = "连接";
+			sourceTree = "<group>";
+		};
+		C2387A462FB8B30D00729396 /* 股票ViewModel */ = {
+			isa = PBXGroup;
+			children = (
+				C2387A412FB8B30D00729396 /* AccountResponse.swift */,
+				C2387A422FB8B30D00729396 /* AssetViewModel.swift */,
+				C2387A432FB8B30D00729396 /* MarketStatusResponse.swift */,
+				C2387A442FB8B30D00729396 /* PositionsViewModel.swift */,
+				C2387A452FB8B30D00729396 /* QuoteViewModel.swift */,
+				C2387A8F2FC2000000729396 /* AdvisorViewModel.swift */,
+			);
+			path = "股票ViewModel";
+			sourceTree = "<group>";
+		};
+		C2387A4B2FB8B30D00729396 /* 加密货币 */ = {
+			isa = PBXGroup;
+			children = (
+				C2387A472FB8B30D00729396 /* OKXClient.swift */,
+				C2387A482FB8B30D00729396 /* OKXModel.swift */,
+				C2387A492FB8B30D00729396 /* PricesViewModel.swift */,
+				C2387A4A2FB8B30D00729396 /* SpotAccountViewModel.swift */,
+			);
+			path = "加密货币";
+			sourceTree = "<group>";
+		};
+		C2387A4E2FB8B30D00729396 /* 统一资产模型 */ = {
+			isa = PBXGroup;
+			children = (
+				C2387A462FB8B30D00729396 /* 股票ViewModel */,
+				C2387A4B2FB8B30D00729396 /* 加密货币 */,
+				C2387A4C2FB8B30D00729396 /* 缓存.swift */,
+				C2387A4D2FB8B30D00729396 /* 统一资产模型.swift */,
+			);
+			path = "统一资产模型";
+			sourceTree = "<group>";
+		};
+		C2387A522FB8B30D00729396 /* 图表 */ = {
+			isa = PBXGroup;
+			children = (
+				C2387A4F2FB8B30D00729396 /* 圆环图+权重条.swift */,
+				C2387A502FB8B30D00729396 /* 资产走势图.swift */,
+				C2387A512FB8B30D00729396 /* AssetSnapshot.swift */,
+				C2387A892FB96E1900729396 /* 分时图.swift */,
+			);
+			path = "图表";
+			sourceTree = "<group>";
+		};
+		C2387A542FB8B30D00729396 /* 其他 */ = {
+			isa = PBXGroup;
+			children = (
+				C2387A532FB8B30D00729396 /* PortfolioToolbarHeader.swift */,
+				C2387A7F2FB8B4A400729396 /* CompanyLogo.swift */,
+				C2387A812FB8BB9900729396 /* logo颜色提取.swift */,
+			);
+			path = "其他";
+			sourceTree = "<group>";
+		};
+		C2387A5C2FB8B30D00729396 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				C2387A542FB8B30D00729396 /* 其他 */,
+				C2387A582FB8B30D00729396 /* ContentView.swift */,
+				C2387A592FB8B30D00729396 /* DashboardView.swift */,
+				C2387A5B2FB8B30D00729396 /* PositionsView.swift */,
+				C2387A552FB8B30D00729396 /* AnalysisView.swift */,
+				C2387A572FB8B30D00729396 /* AsseetDetailView.swift */,
+				C2387A8D2FC1000000729396 /* OrdersView.swift */,
+				C2387A5A2FB8B30D00729396 /* MarketView.swift */,
+				C2387A562FB8B30D00729396 /* 设置？.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		C2387A632FB8B30D00729396 /* PortSight */ = {
+			isa = PBXGroup;
+			children = (
+				C2387A402FB8B30D00729396 /* 连接 */,
+				C2387A4E2FB8B30D00729396 /* 统一资产模型 */,
+				C2387A522FB8B30D00729396 /* 图表 */,
+				C2387A5C2FB8B30D00729396 /* Views */,
+				C2387A5D2FB8B30D00729396 /* Assets.xcassets */,
+				C2387A5E2FB8B30D00729396 /* Info.plist */,
+				C2387A5F2FB8B30D00729396 /* Item.swift */,
+				C2387A602FB8B30D00729396 /* PortSight.entitlements */,
+				C2387A612FB8B30D00729396 /* PortSight.icon */,
+				C2387A622FB8B30D00729396 /* PortSightApp.swift */,
+			);
+			path = PortSight;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		C2387A102FB8B29A00729396 /* PortSight */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C2387A352FB8B29B00729396 /* Build configuration list for PBXNativeTarget "PortSight" */;
+			buildPhases = (
+				C2387A0D2FB8B29A00729396 /* Sources */,
+				C2387A0E2FB8B29A00729396 /* Frameworks */,
+				C2387A0F2FB8B29A00729396 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PortSight;
+			packageProductDependencies = (
+			);
+			productName = PortSight;
+			productReference = C2387A112FB8B29A00729396 /* PortSight.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C2387A212FB8B29B00729396 /* PortSightTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C2387A3A2FB8B29B00729396 /* Build configuration list for PBXNativeTarget "PortSightTests" */;
+			buildPhases = (
+				C2387A1E2FB8B29B00729396 /* Sources */,
+				C2387A1F2FB8B29B00729396 /* Frameworks */,
+				C2387A202FB8B29B00729396 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C2387A242FB8B29B00729396 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C2387A252FB8B29B00729396 /* PortSightTests */,
+			);
+			name = PortSightTests;
+			packageProductDependencies = (
+			);
+			productName = PortSightTests;
+			productReference = C2387A222FB8B29B00729396 /* PortSightTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		C2387A2B2FB8B29B00729396 /* PortSightUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C2387A3D2FB8B29B00729396 /* Build configuration list for PBXNativeTarget "PortSightUITests" */;
+			buildPhases = (
+				C2387A282FB8B29B00729396 /* Sources */,
+				C2387A292FB8B29B00729396 /* Frameworks */,
+				C2387A2A2FB8B29B00729396 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C2387A2E2FB8B29B00729396 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C2387A2F2FB8B29B00729396 /* PortSightUITests */,
+			);
+			name = PortSightUITests;
+			packageProductDependencies = (
+			);
+			productName = PortSightUITests;
+			productReference = C2387A2C2FB8B29B00729396 /* PortSightUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C2387A092FB8B29A00729396 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					C2387A102FB8B29A00729396 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					C2387A212FB8B29B00729396 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = C2387A102FB8B29A00729396;
+					};
+					C2387A2B2FB8B29B00729396 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = C2387A102FB8B29A00729396;
+					};
+				};
+			};
+			buildConfigurationList = C2387A0C2FB8B29A00729396 /* Build configuration list for PBXProject "PortSight" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C2387A082FB8B29A00729396;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C2387A122FB8B29A00729396 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C2387A102FB8B29A00729396 /* PortSight */,
+				C2387A212FB8B29B00729396 /* PortSightTests */,
+				C2387A2B2FB8B29B00729396 /* PortSightUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C2387A0F2FB8B29A00729396 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C2387A642FB8B30D00729396 /* PortSight.icon in Resources */,
+				C2387A662FB8B30D00729396 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C2387A202FB8B29B00729396 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C2387A2A2FB8B29B00729396 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C2387A0D2FB8B29A00729396 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C2387A672FB8B30D00729396 /* AsseetDetailView.swift in Sources */,
+				C2387A682FB8B30D00729396 /* DashboardView.swift in Sources */,
+				C2387A692FB8B30D00729396 /* PortfolioToolbarHeader.swift in Sources */,
+				C2387A6A2FB8B30D00729396 /* AssetViewModel.swift in Sources */,
+				C2387A6B2FB8B30D00729396 /* ContentView.swift in Sources */,
+				C2387A6C2FB8B30D00729396 /* 统一资产模型.swift in Sources */,
+				C2387A6D2FB8B30D00729396 /* AssetSnapshot.swift in Sources */,
+				C2387A6E2FB8B30D00729396 /* MarketStatusResponse.swift in Sources */,
+				C2387A6F2FB8B30D00729396 /* OKXClient.swift in Sources */,
+				C2387A702FB8B30D00729396 /* PricesViewModel.swift in Sources */,
+				C2387A712FB8B30D00729396 /* PositionsViewModel.swift in Sources */,
+				C2387A722FB8B30D00729396 /* PortSightApp.swift in Sources */,
+				C2387A732FB8B30D00729396 /* 圆环图+权重条.swift in Sources */,
+				C2387A802FB8B4A400729396 /* CompanyLogo.swift in Sources */,
+				C2387A822FB8BBA100729396 /* logo颜色提取.swift in Sources */,
+				C2387A742FB8B30D00729396 /* MarketView.swift in Sources */,
+				C2387A752FB8B30D00729396 /* 缓存.swift in Sources */,
+				C2387A762FB8B30D00729396 /* AccountResponse.swift in Sources */,
+				C2387A772FB8B30D00729396 /* AnalysisView.swift in Sources */,
+				C2387A8A2FB96E1C00729396 /* 分时图.swift in Sources */,
+				C2387A782FB8B30D00729396 /* PositionsView.swift in Sources */,
+				C2387A8E2FC1000000729396 /* OrdersView.swift in Sources */,
+				C2387A792FB8B30D00729396 /* OKXModel.swift in Sources */,
+				C2387A8C2FC0000000729396 /* BackendConfig.swift in Sources */,
+				C2387A7A2FB8B30D00729396 /* QuoteViewModel.swift in Sources */,
+				C2387A902FC2000000729396 /* AdvisorViewModel.swift in Sources */,
+				C2387A7B2FB8B30D00729396 /* 设置？.swift in Sources */,
+				C2387A7C2FB8B30D00729396 /* 资产走势图.swift in Sources */,
+				C2387A7D2FB8B30D00729396 /* Item.swift in Sources */,
+				C2387A7E2FB8B30D00729396 /* SpotAccountViewModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C2387A1E2FB8B29B00729396 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C2387A282FB8B29B00729396 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C2387A242FB8B29B00729396 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C2387A102FB8B29A00729396 /* PortSight */;
+			targetProxy = C2387A232FB8B29B00729396 /* PBXContainerItemProxy */;
+		};
+		C2387A2E2FB8B29B00729396 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C2387A102FB8B29A00729396 /* PortSight */;
+			targetProxy = C2387A2D2FB8B29B00729396 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		C2387A362FB8B29B00729396 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = PortSight;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PortSight/PortSight.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VNCWV57XL4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PortSight/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-66.PortSight";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C2387A372FB8B29B00729396 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = PortSight;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PortSight/PortSight.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VNCWV57XL4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PortSight/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-66.PortSight";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C2387A382FB8B29B00729396 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = VNCWV57XL4;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		C2387A392FB8B29B00729396 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = VNCWV57XL4;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C2387A3B2FB8B29B00729396 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VNCWV57XL4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-66.PortSightTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PortSight.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PortSight";
+			};
+			name = Debug;
+		};
+		C2387A3C2FB8B29B00729396 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VNCWV57XL4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-66.PortSightTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PortSight.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PortSight";
+			};
+			name = Release;
+		};
+		C2387A3E2FB8B29B00729396 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VNCWV57XL4;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-66.PortSightUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = PortSight;
+			};
+			name = Debug;
+		};
+		C2387A3F2FB8B29B00729396 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VNCWV57XL4;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-66.PortSightUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = PortSight;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C2387A0C2FB8B29A00729396 /* Build configuration list for PBXProject "PortSight" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C2387A382FB8B29B00729396 /* Debug */,
+				C2387A392FB8B29B00729396 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C2387A352FB8B29B00729396 /* Build configuration list for PBXNativeTarget "PortSight" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C2387A362FB8B29B00729396 /* Debug */,
+				C2387A372FB8B29B00729396 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C2387A3A2FB8B29B00729396 /* Build configuration list for PBXNativeTarget "PortSightTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C2387A3B2FB8B29B00729396 /* Debug */,
+				C2387A3C2FB8B29B00729396 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C2387A3D2FB8B29B00729396 /* Build configuration list for PBXNativeTarget "PortSightUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C2387A3E2FB8B29B00729396 /* Debug */,
+				C2387A3F2FB8B29B00729396 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = C2387A092FB8B29A00729396 /* Project object */;
+}

@@ -9,6 +9,7 @@ fi
 REPO_URL="${REPO_URL:-}"
 BACKEND_PUBLIC_URL="${BACKEND_PUBLIC_URL:-}"
 APP_DIR="${APP_DIR:-/opt/moomoo-backend/app}"
+BACKEND_DIR="${BACKEND_DIR:-${APP_DIR}/backend}"
 DATA_DIR="${DATA_DIR:-/opt/moomoo-backend/data}"
 SERVICE_USER="${SERVICE_USER:-moomoo}"
 SERVICE_NAME="${SERVICE_NAME:-moomoo-backend}"
@@ -58,13 +59,13 @@ if [[ -n "${GITHUB_TOKEN}" ]]; then
   git -C "${APP_DIR}" remote set-url origin "${TOKEN_REMOTE_URL}"
 fi
 
-if [[ ! -f "${DATA_DIR}/asset_snapshots.json" && -f "${APP_DIR}/data/asset_snapshots.json" ]]; then
-  cp "${APP_DIR}/data/asset_snapshots.json" "${DATA_DIR}/asset_snapshots.json"
+if [[ ! -f "${DATA_DIR}/asset_snapshots.json" && -f "${BACKEND_DIR}/data/asset_snapshots.json" ]]; then
+  cp "${BACKEND_DIR}/data/asset_snapshots.json" "${DATA_DIR}/asset_snapshots.json"
 fi
 
-python3 -m venv "${APP_DIR}/.venv"
-"${APP_DIR}/.venv/bin/python" -m pip install --upgrade pip
-"${APP_DIR}/.venv/bin/python" -m pip install -r "${APP_DIR}/requirements.txt"
+python3 -m venv "${BACKEND_DIR}/.venv"
+"${BACKEND_DIR}/.venv/bin/python" -m pip install --upgrade pip
+"${BACKEND_DIR}/.venv/bin/python" -m pip install -r "${BACKEND_DIR}/requirements.txt"
 
 chown -R "${SERVICE_USER}:${SERVICE_USER}" "$(dirname "${APP_DIR}")"
 
@@ -78,12 +79,12 @@ Wants=network-online.target
 Type=simple
 User=${SERVICE_USER}
 Group=${SERVICE_USER}
-WorkingDirectory=${APP_DIR}
+WorkingDirectory=${BACKEND_DIR}
 Environment=BACKEND_PUBLIC_URL=${BACKEND_PUBLIC_URL}
 Environment=MOOMOO_DATA_DIR=${DATA_DIR}
 Environment=MOOMOO_OPEND_HOST=${OPEND_HOST}
 Environment=MOOMOO_OPEND_PORT=${OPEND_PORT}
-ExecStart=${APP_DIR}/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+ExecStart=${BACKEND_DIR}/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5
 
@@ -100,13 +101,14 @@ systemctl enable "${SERVICE_NAME}"
 systemctl restart "${SERVICE_NAME}"
 
 if [[ "${INSTALL_RUNTIME_DATA_PUSH_TIMER}" == "1" || "${INSTALL_RUNTIME_DATA_PUSH_TIMER}" == "true" ]]; then
-  bash "${APP_DIR}/deploy/install_runtime_data_push_timer.sh"
+  bash "${BACKEND_DIR}/deploy/install_runtime_data_push_timer.sh"
 fi
 
 echo
 echo "Backend deploy finished."
 echo "Service: ${SERVICE_NAME}"
 echo "App dir: ${APP_DIR}"
+echo "Backend dir: ${BACKEND_DIR}"
 echo "Data dir: ${DATA_DIR}"
 echo "Public URL: ${BACKEND_PUBLIC_URL}"
 echo
@@ -121,9 +123,9 @@ echo "  systemctl list-timers portsight-runtime-data-push.timer --no-pager"
 echo
 if [[ "${INSTALL_OPEND}" == "1" || "${INSTALL_OPEND}" == "true" ]]; then
   echo "INSTALL_OPEND=${INSTALL_OPEND}; starting OpenD install and first login."
-  bash "${APP_DIR}/deploy/install_opend_ubuntu.sh"
+  bash "${BACKEND_DIR}/deploy/install_opend_ubuntu.sh"
 else
   echo "OpenD still needs to be installed and logged in on this server."
   echo "To install it now:"
-  echo "  bash ${APP_DIR}/deploy/install_opend_ubuntu.sh"
+  echo "  bash ${BACKEND_DIR}/deploy/install_opend_ubuntu.sh"
 fi
