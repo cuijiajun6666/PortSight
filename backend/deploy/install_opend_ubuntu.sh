@@ -90,8 +90,8 @@ if systemctl list-unit-files moomoo-backend.service >/dev/null 2>&1; then
   echo
   echo "Restarting backend and running verification..."
   systemctl restart moomoo-backend
-  if [[ -x /opt/moomoo-backend/app/deploy/verify_server.sh ]]; then
-    /opt/moomoo-backend/app/deploy/verify_server.sh
+  if [[ -x /opt/moomoo-backend/app/backend/deploy/verify_server.sh ]]; then
+    /opt/moomoo-backend/app/backend/deploy/verify_server.sh
   fi
 fi
 

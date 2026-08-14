@@ -7,6 +7,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 APP_DIR="${APP_DIR:-/opt/moomoo-backend/app}"
+BACKEND_DIR="${BACKEND_DIR:-${APP_DIR}/backend}"
 SERVICE_NAME="${SERVICE_NAME:-portsight-runtime-data-push}"
 
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
@@ -18,7 +19,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=${APP_DIR}
-ExecStart=${APP_DIR}/deploy/push_runtime_data.sh
+ExecStart=${BACKEND_DIR}/deploy/push_runtime_data.sh
 EOF
 
 cat > "/etc/systemd/system/${SERVICE_NAME}.timer" <<EOF

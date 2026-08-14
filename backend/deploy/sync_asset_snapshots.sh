@@ -2,10 +2,11 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/moomoo-backend/app}"
+BACKEND_DIR="${BACKEND_DIR:-${APP_DIR}/backend}"
 DATA_DIR="${DATA_DIR:-/opt/moomoo-backend/data}"
 SERVICE_USER="${SERVICE_USER:-moomoo}"
 
-SOURCE_FILE="${APP_DIR}/data/asset_snapshots.json"
+SOURCE_FILE="${BACKEND_DIR}/data/asset_snapshots.json"
 TARGET_FILE="${DATA_DIR}/asset_snapshots.json"
 
 if [[ ! -f "${SOURCE_FILE}" ]]; then
