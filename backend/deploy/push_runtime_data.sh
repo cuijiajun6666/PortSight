@@ -33,5 +33,7 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-git commit -m "Update runtime data $(date -u +%Y-%m-%d)"
+# Commit as the repo owner: a server with no git identity would sign as root@<host>, an address GitHub credits
+# to someone else's account.
+git -c user.name="Jiajun Cui" -c user.email="jcui0126@uni.sydney.edu.au" commit -m "Update runtime data $(date -u +%Y-%m-%d)"
 git push
