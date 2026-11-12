@@ -7,11 +7,15 @@ xcuserdata/
 DerivedData/
 build/
 
+# Swift package build output (PortSightKit/.build is tens of GB)
+.build/
+.swiftpm/
+
 # Local app credentials and environment files
 .env
 .env.*
 !.env.example
-frontend/Config/LocalSecrets.xcconfig
+ios/Config/LocalSecrets.xcconfig
 
 # Python
 backend/.venv/

@@ -1,0 +1,602 @@
+--- a/PortsightMac/App/Layout/DesktopSectionTabs.swift
++++ b/PortsightMac/App/Layout/DesktopSectionTabs.swift
+@@ -2,7 +2,7 @@
+ import PortSightKit
+ 
+ /// A section's tabs, shown in the toolbar row beside the account scope picker.
+-/// Each tab group is its own native segmented control, so related tabs read as one set.
++/// Each tab group uses the shared capsule control.
+ struct DesktopSectionTabs: View {
+     let groups: [[DesktopTab]]
+     @Binding var selection: DesktopTab
+@@ -11,12 +11,7 @@
+         HStack(spacing: 10) {
+             ForEach(groups.indices, id: \.self) { index in
+                 let group = groups[index]
+-                Picker("", selection: binding(for: group)) {
+-                    ForEach(group) { tab in
+-                        Text(tab.title).tag(Optional(tab))
+-                    }
+-                }
+-                .pickerStyle(.segmented)
++                DesktopCapsulePicker(title: "页面", options: group.map { Optional($0) }, selection: binding(for: group)) { $0?.title ?? "" }
+                 .labelsHidden()
+                 .fixedSize()
+                 .accessibilityIdentifier("section_tabs_\(index)")
+--- a/PortsightMac/App/Navigation/DesktopToolbar.swift
++++ b/PortsightMac/App/Navigation/DesktopToolbar.swift
+@@ -31,12 +31,7 @@
+                 }
+                 // Only sections that really split money by account show 全部 / 个人 / 量化.
+                 if section.usesScope {
+-                    Picker("资产范围", selection: $demo.scope) {
+-                        ForEach(PortfolioScope.allCases) { scope in
+-                            Text(scope.rawValue).tag(scope)
+-                        }
+-                    }
+-                    .pickerStyle(.segmented)
++                    DesktopCapsulePicker(title: "资产范围", options: PortfolioScope.allCases, selection: $demo.scope) { $0.rawValue }
+                     .labelsHidden()
+                     .accessibilityIdentifier("portfolio_scope")
+                     .help("资产范围")
+--- a/PortsightMac/Features/Activity/DemoActivityView.swift
++++ b/PortsightMac/Features/Activity/DemoActivityView.swift
+@@ -13,9 +13,7 @@
+             List {
+                 Section {
+                     HStack { Text(demo.scope.rawValue + "动态").font(.title2.bold()) }
+-                    Picker("类型", selection: $filter) {
+-                        ForEach(["全部", "成交", "资金", "分红", "系统"], id: \.self) { Text($0).tag($0) }
+-                    }.pickerStyle(.segmented)
++                    DesktopCapsulePicker(title: "类型", options: ["全部", "成交", "资金", "分红", "系统"], selection: $filter) { $0 }
+                 }.listRowBackground(Color.clear)
+                 Section {
+                     if rows.isEmpty { ContentUnavailableView.search(text: search) }
+--- a/PortsightMac/Features/Activity/DesktopActivityView.swift
++++ b/PortsightMac/Features/Activity/DesktopActivityView.swift
+@@ -29,9 +29,7 @@
+                                     .buttonStyle(.plain).help("清除搜索")
+                             }
+                         }.padding(9).frame(width: 190).background(DesktopTheme.canvas, in: RoundedRectangle(cornerRadius: 9))
+-                        Picker("动态类型", selection: $filter) {
+-                            ForEach(["全部", "成交", "资金", "分红", "系统"], id: \.self) { Text($0).tag($0) }
+-                        }.pickerStyle(.segmented).frame(width: 330)
++                        DesktopCapsulePicker(title: "动态类型", options: ["全部", "成交", "资金", "分红", "系统"], selection: $filter) { $0 }
+                     }
+                 }
+                 DesktopCard {
+--- a/PortsightMac/Features/Analysis/DemoReportDetail.swift
++++ b/PortsightMac/Features/Analysis/DemoReportDetail.swift
+@@ -13,11 +13,11 @@
+     var body: some View {
+         List {
+             HStack { Text(demo.scope.rawValue + "复盘");  }
+-            Picker("周期", selection: $period) { ForEach(["日报", "周报", "月报"], id: \.self) { Text($0).tag($0) } }.pickerStyle(.segmented)
++            DesktopCapsulePicker(title: "周期", options: ["日报", "周报", "月报"], selection: $period) { $0 }
+             Section {
+                 Text("\(period)收益 " + demoPercent(performance)).font(.title2.bold())
+                 Text("NVDA 和核心 ETF 提供主要正贡献。入金与内部划转单独记录。").foregroundStyle(.secondary)
+-                Picker("图表", selection: $chart) { Text("资产").tag("资产"); Text("收益率").tag("收益率") }.pickerStyle(.segmented)
++                DesktopCapsulePicker(title: "图表", options: ["资产", "收益率"], selection: $chart) { $0 }
+                 Chart {
+                     ForEach(points) { point in
+                         let first = points.first!
+--- a/PortsightMac/Features/Analysis/DesktopAnalysisView.swift
++++ b/PortsightMac/Features/Analysis/DesktopAnalysisView.swift
+@@ -27,8 +27,7 @@
+                         HStack {
+                             DesktopSectionTitle(title: "组合与基准", subtitle: "区间起点归零 · 期间无外部现金流")
+                             Spacer()
+-                            Picker("区间", selection: $period) { Text("1W").tag("1W"); Text("1M").tag("1M") }
+-                                .pickerStyle(.segmented).labelsHidden().frame(width: 120)
++                            DesktopCapsulePicker(title: "区间", options: ["1W", "1M"], selection: $period) { $0 }.labelsHidden()
+                             Button("收益复盘 ↗") { openSheet(.report) }.buttonStyle(.glass).foregroundStyle(.primary).padding(.leading, 15)
+                         }
+                         HStack(alignment: .firstTextBaseline, spacing: 12) {
+--- a/PortsightMac/Features/Notifications/DesktopNotificationsPanel.swift
++++ b/PortsightMac/Features/Notifications/DesktopNotificationsPanel.swift
+@@ -127,12 +127,11 @@
+                     filterButton("警告", value: "warning")
+                     filterButton("信息", value: "info")
+                     Spacer(minLength: 0)
+-                    Picker("类别", selection: $category) {
++                    DesktopCapsuleMenu(title: "类别", value: category, selection: $category) {
+                         Text("全部类别").tag("全部类别")
+                         Divider()
+                         ForEach(NotificationFeed.categories, id: \.self) { Text($0).tag($0) }
+                     }
+-                    .pickerStyle(.menu)
+                     .labelsHidden()
+                     .fixedSize()
+                     .accessibilityIdentifier("notifications_category")
+--- a/PortsightMac/Features/Orders/DesktopOrdersView.swift
++++ b/PortsightMac/Features/Orders/DesktopOrdersView.swift
+@@ -27,7 +27,7 @@
+                             DesktopSectionTitle(title: "交易记录", subtitle: "成交与待成交订单，一处查看")
+                             Spacer()
+                             TextField("搜索代码", text: $symbol).textFieldStyle(.roundedBorder).frame(width: 160)
+-                            Picker("状态", selection: $filter) { ForEach(["全部", "已成交", "待成交"], id: \.self) { Text($0).tag($0) } }.pickerStyle(.segmented).labelsHidden().frame(width: 220)
++                            DesktopCapsulePicker(title: "状态", options: ["全部", "已成交", "待成交"], selection: $filter) { $0 }.labelsHidden()
+                         }
+                         if orders.isEmpty {
+                             ContentUnavailableView("暂无订单", systemImage: "tray", description: Text("当前范围和筛选条件下没有订单。"))
+--- a/PortsightMac/Features/Orders/OrdersDetailView.swift
++++ b/PortsightMac/Features/Orders/OrdersDetailView.swift
+@@ -218,7 +218,7 @@
+                         .animation(.default, value: symbolFilterAnimationKey)
+                     }
+                 }
+-                Picker("订单状态", selection: Binding(
++                DesktopCapsulePicker(title: "订单状态", options: OrderStatusFilter.allCases, selection: Binding(
+                     get: { selectedStatus },
+                     set: { newValue in
+                         withAnimation {
+@@ -227,12 +227,7 @@
+                             refreshOrderRenderSnapshot()
+                         }
+                     }
+-                )) {
+-                    ForEach(OrderStatusFilter.allCases) { status in
+-                        Text(status.rawValue).tag(status)
+-                    }
+-                }
+-                .pickerStyle(.segmented)
++                )) { $0.rawValue }
+                 .listRowSeparator(.hidden)
+                 .listRowBackground(Color.clear)
+                 .padding(.horizontal)
+--- a/PortsightMac/Features/Overview/MarketContext/DesktopMarketHeatmapCard.swift
++++ b/PortsightMac/Features/Overview/MarketContext/DesktopMarketHeatmapCard.swift
+@@ -57,10 +57,7 @@
+             DesktopSectionTitle(title: zoomed?.name ?? "市场热力图", subtitle: subtitle)
+             Spacer(minLength: 8)
+             sectorMenu
+-            Picker("颜色", selection: $metric) {
+-                ForEach(HeatmapColorMetric.allCases) { Text($0.title).tag($0) }
+-            }
+-            .pickerStyle(.segmented)
++            DesktopCapsulePicker(title: "颜色", options: HeatmapColorMetric.allCases, selection: $metric) { $0.title }
+             .fixedSize()
+             .accessibilityIdentifier("heatmap_metric")
+         }
+@@ -193,8 +190,16 @@
+         .accessibilityIdentifier("heatmap_sector_" + sector.id)
+     }
+ 
++    private func heatmapColor(_ value: Double, scale: HeatmapColorScale) -> Color {
++        let intensity = scale.intensity(value)
++        guard abs(intensity) > 0.02 else { return Color(red: 0.43, green: 0.48, blue: 0.54) }
++        return Color(hue: intensity > 0 ? 0.40 : 0.005,
++                     saturation: 0.76 + 0.18 * abs(intensity),
++                     brightness: 0.82 - 0.20 * abs(intensity))
++    }
++
+     private func tileColor(_ stock: HeatmapStock) -> Color {
+-        metric.scale.color(metric.value(of: stock), up: DesktopTheme.green, down: .red)
++        heatmapColor(metric.value(of: stock), scale: metric.scale)
+     }
+ 
+     private func holding(for stock: HeatmapStock) -> DemoHolding? {
+@@ -268,7 +273,7 @@
+             Text(labels.low)
+             HStack(spacing: 1) {
+                 ForEach(steps, id: \.self) { step in
+-                    scale.color(step * scale.limit, up: DesktopTheme.green, down: .red).frame(width: 22, height: 8)
++                    heatmapColor(step * scale.limit, scale: scale).frame(width: 22, height: 8)
+                 }
+             }
+             .clipShape(Capsule())
+--- a/PortsightMac/Features/Positions/DesktopPositionsView.swift
++++ b/PortsightMac/Features/Positions/DesktopPositionsView.swift
+@@ -51,8 +51,7 @@
+                     VStack(spacing: 20) {
+                         HStack(spacing: 18) {
+                             if !assetClass.kinds.isEmpty {
+-                                Picker("类型", selection: $kind) { ForEach(assetClass.kinds, id: \.self) { Text($0).tag($0) } }
+-                                    .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 330)
++                                DesktopCapsulePicker(title: "类型", options: assetClass.kinds, selection: $kind) { $0 }.labelsHidden()
+                             }
+                             Spacer()
+                             HStack(spacing: 7) {
+@@ -60,7 +59,7 @@
+                                 TextField("搜索资产", text: $search).textFieldStyle(.plain)
+                                     .accessibilityIdentifier("position_search")
+                             }.padding(9).frame(width: 170).background(DesktopTheme.canvas, in: RoundedRectangle(cornerRadius: 9))
+-                            Picker("排序", selection: $sort) { ForEach(["市值", "收益", "名称"], id: \.self) { Text($0).tag($0) } }.frame(width: 100)
++                            DesktopCapsuleMenu(title: "排序", value: sort, selection: $sort) { ForEach(["市值", "收益", "名称"], id: \.self) { Text($0).tag($0) } }
+                         }
+                         if holdings.isEmpty {
+                             ContentUnavailableView("没有匹配的资产", systemImage: "magnifyingglass", description: Text("尝试其他名称或资产类别。"))
+--- a/PortsightMac/Features/Positions/IOSPositionsView.swift
++++ b/PortsightMac/Features/Positions/IOSPositionsView.swift
+@@ -269,19 +269,14 @@
+                     }
+                 } header: {
+                     VStack {
+-                        Picker("持仓类型", selection: Binding(
++                        DesktopCapsulePicker(title: "持仓类型", options: availableAllocationFilters, selection: Binding(
+                             get: { allocationFilter },
+                             set: { newValue in
+                                 withAnimation(.timingCurve(0.85, 0.0, 0.2, 1.0, duration: 0.85)) {
+                                     allocationFilter = newValue
+                                 }
+                             }
+-                        )) {
+-                            ForEach(availableAllocationFilters) { filter in
+-                                Text(filter.rawValue).tag(filter)
+-                            }
+-                        }
+-                        .pickerStyle(.segmented)
++                        )) { $0.rawValue }
+                         //.frame(width: allocationPickerWidth)
+                     }
+                 }
+--- a/PortsightMac/Features/Server/DesktopServerViews.swift
++++ b/PortsightMac/Features/Server/DesktopServerViews.swift
+@@ -198,10 +198,7 @@
+                     Text("runner 跑策略，sleeve 是子策略，collector 采集数据").font(.system(size: 12)).foregroundStyle(.secondary)
+                 }
+                 Spacer()
+-                Picker("类型", selection: $kind) {
+-                    ForEach(["全部", "runner", "sleeve", "collector"], id: \.self) { Text($0 == "全部" ? "全部" : $0).tag($0) }
+-                }
+-                .pickerStyle(.segmented).labelsHidden().fixedSize()
++                DesktopCapsulePicker(title: "类型", options: ["全部", "runner", "sleeve", "collector"], selection: $kind) { $0 }.labelsHidden().fixedSize()
+             }
+             .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 16)
+             Table(rows, sortOrder: $order) {
+--- a/PortsightMac/Features/Settings/DesktopSettingsView.swift
++++ b/PortsightMac/Features/Settings/DesktopSettingsView.swift
+@@ -8,11 +8,7 @@
+     var body: some View {
+         Form {
+             Section("外观") {
+-                Picker("主题", selection: $appearance) {
+-                    Text("浅色").tag("light")
+-                    Text("深色").tag("dark")
+-                    Text("跟随系统").tag("system")
+-                }.pickerStyle(.segmented)
++                DesktopCapsulePicker(title: "主题", options: ["light", "dark", "system"], selection: $appearance) { $0 == "light" ? "浅色" : $0 == "dark" ? "深色" : "跟随系统" }
+             }
+             Section("数据模式") {
+                 LabeledContent("当前模式", value: "离线 (未接入服务器)")
+--- a/PortsightMac/Features/Terminal/DesktopTerminalOverview.swift
++++ b/PortsightMac/Features/Terminal/DesktopTerminalOverview.swift
+@@ -24,22 +24,9 @@
+     }
+ 
+     var body: some View {
+-        DesktopFullPage(spacing: 22) {
++        DesktopFullPage(maxWidth: 1_400, spacing: 22) {
+             header
+                 .accessibilityIdentifier("terminal_total")
+-
+-            // Only when something needs a look.
+-            if !attentionItems.isEmpty {
+-                DesktopPageSection(title: "需要处理", spacing: 8) {
+-                    VStack(spacing: 2) {
+-                        ForEach(attentionItems) { item in
+-                            Button { handle(item) } label: { DesktopAttentionRow(item: item) }
+-                                .buttonStyle(DesktopHoverRowStyle())
+-                        }
+-                    }
+-                }
+-                .accessibilityIdentifier("terminal_attention")
+-            }
+ 
+             DesktopPageSection(title: "服务器", subtitle: serverSubtitle, spacing: 14) {
+                 serverSummary
+@@ -94,7 +81,7 @@
+             .environmentObject(terminal)
+         }
+         .sheet(item: $openAsset) { asset in
+-            DesktopSheetContainer(title: asset.symbol + " · " + asset.name) {
++            DesktopSheetContainer(title: asset.symbol + " · " + asset.name, width: 640, height: 560) {
+                 AssetDetailView(asset: asset)
+             }
+             .environmentObject(demo).environmentObject(market)
+@@ -114,8 +101,24 @@
+ 
+     /// Total with 累计 and 今日 on the left, a compact asset curve in the middle, the key figures on the right.
+     private var header: some View {
+-        HStack(alignment: .top, spacing: 32) {
+-            VStack(alignment: .leading, spacing: 8) {
++        ViewThatFits(in: .horizontal) {
++            HStack(alignment: .top, spacing: 24) {
++                moneySummary
++                trend
++                figuresAndAttention
++            }
++            VStack(alignment: .leading, spacing: 22) {
++                HStack(alignment: .top, spacing: 24) {
++                    moneySummary
++                    trend
++                }
++                figuresAndAttention
++            }
++        }
++    }
++
++    private var moneySummary: some View {
++        VStack(alignment: .leading, spacing: 8) {
+                 Text("总资产 · " + demo.scope.rawValue).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                 Text(DesktopTheme.money(hoveredValue ?? demo.total))
+                     .font(.system(size: 30, weight: .semibold, design: .rounded))
+@@ -132,14 +135,31 @@
+                     .padding(.top, 10)
+             }
+             .fixedSize()
+-            AssetTrendChart(snapshots: demo.snapshots, principal: demo.principal, currentTotalAsset: demo.total,
++    }
++
++    private var trend: some View {
++        AssetTrendChart(snapshots: demo.snapshots, principal: demo.principal, currentTotalAsset: demo.total,
+                             selectedAssetValue: $hoveredValue, metric: .amount, showsRangePicker: false,
+                             chartHeight: 112, rangeSelection: $range)
+-                .frame(minWidth: 0, maxWidth: 260)
++                .frame(minWidth: 100, maxWidth: 200)
+                 .frame(height: 122)
+                 .accessibilityIdentifier("terminal_trend_chart")
+-            keyFigures
+-                .frame(minWidth: 230, idealWidth: 330, maxWidth: 330)
++    }
++
++    private var figuresAndAttention: some View {
++        HStack(alignment: .top, spacing: 24) {
++            keyFigures.frame(width: 270)
++            if !attentionItems.isEmpty {
++                VStack(alignment: .leading, spacing: 8) {
++                    Text("需要处理").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
++                    ForEach(attentionItems) { item in
++                        Button { handle(item) } label: { DesktopAttentionRow(item: item) }
++                            .buttonStyle(DesktopHoverRowStyle())
++                    }
++                }
++                .frame(width: 250, alignment: .leading)
++                .accessibilityIdentifier("terminal_attention")
++            }
+         }
+     }
+ 
+--- a/PortsightMac/Features/Trading/Backtest/BacktestPanels.swift
++++ b/PortsightMac/Features/Trading/Backtest/BacktestPanels.swift
+@@ -281,23 +281,20 @@
+         let rows = model.listedTrades.sorted(using: sortOrder)
+         VStack(alignment: .leading, spacing: 12) {
+             HStack(spacing: 10) {
+-                Picker("快速筛选", selection: $model.quickFilter) {
+-                    ForEach(BacktestQuickFilter.allCases) { Text($0.rawValue).tag($0) }
+-                }
+-                .pickerStyle(.segmented).labelsHidden().fixedSize()
++                DesktopCapsulePicker(title: "快速筛选", options: BacktestQuickFilter.allCases, selection: $model.quickFilter) { $0.rawValue }.labelsHidden().fixedSize()
+                 Spacer()
+-                Picker("品种", selection: $model.listSymbol) {
++                DesktopCapsuleMenu(title: "品种", value: model.listSymbol ?? "全部品种", selection: $model.listSymbol) {
+                     Text("全部品种").tag(String?.none)
+                     ForEach(model.run.symbols, id: \.self) { Text($0).tag(String?.some($0)) }
+                 }
+                 .fixedSize()
+-                Picker("方向", selection: $model.listSide) {
++                DesktopCapsuleMenu(title: "方向", value: model.listSide?.title ?? "多空", selection: $model.listSide) {
+                     Text("多空").tag(BacktestSide?.none)
+                     Text("多").tag(BacktestSide?.some(.long))
+                     Text("空").tag(BacktestSide?.some(.short))
+                 }
+                 .fixedSize()
+-                Picker("平仓原因", selection: $model.listReason) {
++                DesktopCapsuleMenu(title: "平仓原因", value: model.listReason.map { BacktestExitReason.title($0) } ?? "全部原因", selection: $model.listReason) {
+                     Text("全部原因").tag(String?.none)
+                     ForEach(model.exitReasons, id: \.self) { Text(BacktestExitReason.title($0)).tag(String?.some($0)) }
+                 }
+--- a/PortsightMac/Features/Trading/Backtest/DesktopBacktestView.swift
++++ b/PortsightMac/Features/Trading/Backtest/DesktopBacktestView.swift
+@@ -80,6 +80,7 @@
+             }
+             // Liquid Glass, like the other page headers' buttons.
+             .buttonStyle(.glass)
++            .buttonBorderShape(.capsule)
+             .controlSize(.large)
+         }
+     }
+@@ -150,10 +151,7 @@
+         VStack(alignment: .leading, spacing: 10) {
+             HStack(spacing: 12) {
+                 symbolPicker
+-                Picker("周期", selection: Binding(get: { model.timeframe }, set: { model.changeTimeframe($0) })) {
+-                    ForEach(model.run.timeframes(model.symbol)) { Text($0.title).tag($0) }
+-                }
+-                .pickerStyle(.segmented).fixedSize().labelsHidden()
++                DesktopCapsulePicker(title: "周期", options: model.run.timeframes(model.symbol), selection: Binding(get: { model.timeframe }, set: { model.changeTimeframe($0) })) { $0.title }.fixedSize().labelsHidden()
+                 Toggle("信号副图", isOn: $model.showsSignals).toggleStyle(.switch).controlSize(.small)
+                 Spacer()
+                 legend
+@@ -209,18 +207,14 @@
+         let symbols = model.run.symbols // most traded first
+         let selection = Binding(get: { model.symbol }, set: { model.symbol = $0; model.selectedTradeID = nil })
+         if symbols.count <= 5 {
+-            Picker("品种", selection: selection) {
+-                ForEach(symbols, id: \.self) { Text($0).tag($0) }
+-            }
+-            .pickerStyle(.segmented).fixedSize().labelsHidden()
++            DesktopCapsulePicker(title: "品种", options: symbols, selection: selection) { $0 }.fixedSize().labelsHidden()
+         } else {
+             let counts = model.tradeCounts
+-            Picker("品种", selection: selection) {
++            DesktopCapsuleMenu(title: "品种", value: selection.wrappedValue, selection: selection) {
+                 ForEach(symbols, id: \.self) { symbol in
+                     Text("\(symbol)  ·  \(counts[symbol] ?? 0) 笔").tag(symbol)
+                 }
+-            }
+-            .pickerStyle(.menu).fixedSize().labelsHidden()
++            }.fixedSize().labelsHidden()
+         }
+     }
+ 
+--- a/PortsightMac/Features/Trading/DesktopReportBacktestCompare.swift
++++ b/PortsightMac/Features/Trading/DesktopReportBacktestCompare.swift
+@@ -163,12 +163,11 @@
+             }
+         } trailing: {
+             if !sealed, !Self.runs.isEmpty {
+-                Picker("回测", selection: runBinding) {
++                DesktopCapsuleMenu(title: "回测", value: Self.runs.first { $0.id == runBinding.wrappedValue }.map { $0.meta.strategy + " · " + $0.meta.segmentTitle } ?? "选择回测", selection: runBinding) {
+                     ForEach(Self.runs) { run in
+                         Text(run.meta.strategy + " · " + run.meta.segmentTitle).tag(run.id)
+                     }
+-                }
+-                .pickerStyle(.menu).labelsHidden().fixedSize()
++                }.labelsHidden().fixedSize()
+                 .help("选择用来对照的回测")
+             }
+         }
+--- a/PortsightMac/Features/Trading/DesktopTradingViews.swift
++++ b/PortsightMac/Features/Trading/DesktopTradingViews.swift
+@@ -152,15 +152,11 @@
+                               title: sealed ? "前向封存中" : TerminalFormat.percent(report.returnPct),
+                               detail: sealed ? "影子账本只显示状态和检验，收益 \(DesktopLineSeal.opensTitle) 开放。" : report.summary) {
+                 HStack(spacing: 12) {
+-                    Picker("线路", selection: $lineID) {
++                    DesktopCapsuleMenu(title: "线路", value: line.title, selection: $lineID) {
+                         ForEach(DemoTerminalData.lines) { Text($0.title).tag($0.id) }
+                     }
+                     .labelsHidden().fixedSize()
+-                    Picker("周期", selection: $weekly) {
+-                        Text("日报").tag(false)
+-                        Text("周报").tag(true)
+-                    }
+-                    .pickerStyle(.segmented).labelsHidden().fixedSize()
++                    DesktopCapsulePicker(title: "周期", options: [false, true], selection: $weekly) { $0 ? "周报" : "日报" }.labelsHidden().fixedSize()
+                 }
+             }
+ 
+--- a/PortsightMac/Features/Trading/Live/DesktopLiveTradingView.swift
++++ b/PortsightMac/Features/Trading/Live/DesktopLiveTradingView.swift
+@@ -60,10 +60,7 @@
+         let detail = "\(model.accountModels.count) 个模型 · \(running) 个运行中 · 更新于 " + LiveFormat.clock(feed.now)
+         return DesktopPageHeader(eyebrow: "交易 · 实时", title: model.account?.name ?? model.accountKind.title, detail: detail) {
+             HStack(spacing: 10) {
+-                Picker("账户", selection: $model.accountKind) {
+-                    ForEach(LiveAccountKind.allCases) { Text($0.title).tag($0) }
+-                }
+-                .pickerStyle(.segmented).fixedSize().labelsHidden()
++                DesktopCapsulePicker(title: "账户", options: LiveAccountKind.allCases, selection: $model.accountKind) { $0.title }.fixedSize().labelsHidden()
+                 Menu {
+                     Picker("模型", selection: $model.modelFilter) {
+                         Text("全部模型").tag(String?.none)
+@@ -77,6 +74,7 @@
+                 if model.showsMoney { contractPicker }
+             }
+             .buttonStyle(.glass)
++            .buttonBorderShape(.capsule)
+             .controlSize(.large)
+         }
+     }
+@@ -86,15 +84,11 @@
+         let counts = model.contractCounts
+         let selection = Binding(get: { model.contract }, set: { model.changeContract($0) })
+         if counts.count <= 5 {
+-            Picker("合约", selection: selection) {
+-                ForEach(counts, id: \.contract) { Text($0.contract).tag($0.contract) }
+-            }
+-            .pickerStyle(.segmented).fixedSize().labelsHidden()
++            DesktopCapsulePicker(title: "合约", options: counts.map(\.contract), selection: selection) { $0 }.fixedSize().labelsHidden()
+         } else {
+-            Picker("合约", selection: selection) {
++            DesktopCapsuleMenu(title: "合约", value: selection.wrappedValue, selection: selection) {
+                 ForEach(counts, id: \.contract) { Text("\($0.contract)  ·  \($0.count) 笔").tag($0.contract) }
+-            }
+-            .pickerStyle(.menu).fixedSize().labelsHidden()
++            }.fixedSize().labelsHidden()
+         }
+     }
+ 
+@@ -127,10 +121,7 @@
+     private var chartSection: some View {
+         VStack(alignment: .leading, spacing: 10) {
+             HStack(spacing: 12) {
+-                Picker("周期", selection: Binding(get: { model.timeframe }, set: { model.changeTimeframe($0) })) {
+-                    ForEach(LiveViewerModel.timeframes) { Text($0.shortTitle).tag($0) }
+-                }
+-                .pickerStyle(.segmented).fixedSize().labelsHidden()
++                DesktopCapsulePicker(title: "周期", options: LiveViewerModel.timeframes, selection: Binding(get: { model.timeframe }, set: { model.changeTimeframe($0) })) { $0.shortTitle }.fixedSize().labelsHidden()
+                 HStack(spacing: 5) {
+                     DesktopStatusDot(color: feed.isRunning ? DesktopTheme.green : .secondary)
+                     Text(feed.isRunning ? "实时" : "已暂停")
+--- a/PortsightMac/Features/Trading/Live/LivePanels.swift
++++ b/PortsightMac/Features/Trading/Live/LivePanels.swift
+@@ -19,12 +19,7 @@
+     var body: some View {
+         VStack(alignment: .leading, spacing: 12) {
+             HStack {
+-                Picker("面板", selection: $tab) {
+-                    ForEach(LiveBottomTab.allCases) { item in
+-                        Text(title(item)).tag(item)
+-                    }
+-                }
+-                .pickerStyle(.segmented).fixedSize().labelsHidden()
++                DesktopCapsulePicker(title: "面板", options: LiveBottomTab.allCases, selection: $tab) { title($0) }.fixedSize().labelsHidden()
+                 Spacer()
+                 if tab == .fills { fillFilters }
+             }
+@@ -141,12 +136,12 @@
+ 
+     private var fillFilters: some View {
+         HStack(spacing: 10) {
+-            Picker("合约", selection: $fillContract) {
++            DesktopCapsuleMenu(title: "合约", value: fillContract ?? "全部合约", selection: $fillContract) {
+                 Text("全部合约").tag(String?.none)
+                 ForEach(model.contractCounts, id: \.contract) { Text($0.contract).tag(String?.some($0.contract)) }
+             }
+             .fixedSize()
+-            Picker("方向", selection: $fillSide) {
++            DesktopCapsuleMenu(title: "方向", value: fillSide?.title ?? "多空", selection: $fillSide) {
+                 Text("多空").tag(BacktestSide?.none)
+                 Text("多").tag(BacktestSide?.some(.long))
+                 Text("空").tag(BacktestSide?.some(.short))
+--- a/PortsightMac/Shared/Components/DemoScopeMenu.swift
++++ b/PortsightMac/Shared/Components/DemoScopeMenu.swift
+@@ -12,6 +12,6 @@
+                 Text(demo.scope.rawValue).font(.subheadline.weight(.semibold))
+                 Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+             }
+-        }.accessibilityLabel("资产范围：" + demo.scope.rawValue)
++        }.buttonStyle(.glass).buttonBorderShape(.capsule).accessibilityLabel("资产范围：" + demo.scope.rawValue)
+     }
+ }
+--- a/PortsightMac/Shared/Components/DesktopCapsulePicker.swift
++++ b/PortsightMac/Shared/Components/DesktopCapsulePicker.swift
+@@ -35,3 +35,34 @@
+         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selection)
+     }
+ }
++
++
++/// Long option lists retain a menu, while their visible control matches the segmented capsules.
++struct DesktopCapsuleMenu<Selection: Hashable, Options: View>: View {
++    let title: String
++    let value: String
++    @Binding var selection: Selection
++    @ViewBuilder var options: Options
++
++    var body: some View {
++        Menu {
++            Picker(title, selection: $selection) { options }
++                .pickerStyle(.inline)
++        } label: {
++            HStack(spacing: 7) {
++                Text(value).lineLimit(1)
++                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
++            }
++            .font(.system(size: 12, weight: .medium))
++            .foregroundStyle(.white)
++            .padding(.horizontal, 12).padding(.vertical, 9)
++            .background(.black, in: Capsule())
++            .contentShape(Capsule())
++        }
++        .menuStyle(.borderlessButton)
++        .menuIndicator(.hidden)
++        .fixedSize()
++        .accessibilityLabel(title)
++        .accessibilityValue(value)
++    }
++}

@@ -6,13 +6,17 @@ PortSight is a unified portfolio project with a SwiftUI client and a Python/Fast
 
 ```text
 PortSight/
-├── frontend/   # iOS/macOS SwiftUI app and Xcode project
-└── backend/    # FastAPI service and deployment scripts
+├── ios/            # iOS SwiftUI app (PortSight.xcodeproj) — formerly frontend/
+├── mac/            # macOS SwiftUI app (PortsightMac.xcodeproj)
+├── PortSightKit/   # Swift package shared by both apps (referenced as ../PortSightKit)
+└── backend/        # FastAPI service and deployment scripts (paths unchanged)
 ```
 
-## Frontend
+Keep the four folders side by side: both Xcode projects find the shared package at `../PortSightKit`.
 
-Open `frontend/PortSight.xcodeproj` in Xcode. The OKX credentials are intentionally not stored in Git. For local development, add these environment variables to the active Xcode scheme:
+## iOS and macOS apps
+
+Open `ios/PortSight.xcodeproj` or `mac/PortsightMac.xcodeproj` in Xcode. The OKX credentials are intentionally not stored in Git. For local development, add these environment variables to the active Xcode scheme:
 
 - `OKX_API_KEY`
 - `OKX_SECRET_KEY`

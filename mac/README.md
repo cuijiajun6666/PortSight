@@ -1,0 +1,59 @@
+# PortSight for Mac
+
+Native SwiftUI desktop port of the adjacent PortSight iOS project. Open `PortsightMac.xcodeproj`, select **PortsightMac → My Mac**, and run. Built with Xcode 27.1 / macOS 27 SDK.
+
+This version deliberately uses the same deterministic, hardcoded portfolio as iOS. All broker requests are disabled. `DemoOfflineProtocol` blocks legacy network routes, `BackendConfig.url` returns nil in demo mode, and no account credentials are embedded in the Mac project. The one live connection is 设置 → 量化服务器: pairing with the Mac mini's relay over Tailscale HTTPS (device token in the keychain) and its APNs pushes; DemoOfflineProtocol lets only those relay requests through.
+
+## Project layout
+
+| Folder | Responsibility |
+| --- | --- |
+| `App/Navigation` | Fixed plain icon navigation with hover help, native toolbar with page title and adaptive account picker, destinations and sheets |
+| `App/Layout` | Shared window material, opaque rounded content surface and scrolling layout with no gap beside the icon rail |
+| `Core/Demo` | Shared sample holdings, account scopes, activity and notices |
+| `Core/Models` | Unified assets, positions, orders, snapshots, advisor and market response models |
+| `Core/Networking` | Retained moomoo relay configuration and OKX client |
+| `Core/ViewModels` | Imported account, position, quote, market, order, snapshot, advisor and crypto logic |
+| `Core/Persistence` | Imported cache manager |
+| `Shared/Charts` | Original asset curve and vertical morph, allocation ring, weight bar and intraday charts |
+| `Shared/Components`, `Theme`, `Logos`, `Formatting` | Reusable UI, appearance, native AppKit logos and formatting |
+| `Features/Overview`, `Allocation`, `MarketContext` | Asset dashboard, compact allocation, sector flows, event countdown and related news |
+| `Features/Positions`, `AssetDetail` | Searchable holdings, weighted costs, ownership and full asset details |
+| `Features/Market`, `Orders`, `Activity` | Market overview, order history and event timeline |
+| `Features/Analysis`, `Strategies`, `Notifications`, `Settings` | Analysis, model/strategy views, transparent notification panel and settings form |
+| `Resources` | Original iOS app icon |
+
+`ContentView.swift` composes the desktop pages; it does not contain account calculations. The original iOS app is unchanged. Source components retain their original type names where useful, but UIKit image handling and phone-only navigation have been adapted to macOS. The existing iOS detail pages are reachable from the desktop asset sheets, report, order filtering and detailed analysis.
+
+The toolbar and transparent icon rail share one window-level `ultraThinMaterial` background. The toolbar's separate backdrop is hidden so the two regions read as one continuous surface. An opaque panel using the system control background color with 20-point continuous corners covers the main scroll area. The canvas uses the system window background color; dark appearance is neutral gray/black rather than custom navy. These layers are defined in `App/Layout/DesktopWindowBackground.swift` and `DesktopContentSurface.swift`. The account picker keeps its system background and automatic sizing. Page titles appear in the toolbar, beside the picker, so the scroll surface begins directly with page content. Sidebar buttons use outline SF Symbols when inactive and their filled counterparts when selected, with native `primary` foreground styling that adapts to the appearance. A single 36 × 36 rounded square uses native Liquid Glass with the unmodified regular glass material and slides continuously between rows over 0.24 seconds using a fast-start ease-out curve. Outline and filled symbols crossfade over 0.18 seconds; Reduce Motion disables both animations. The sidebar settings button has been removed; Settings remains in the toolbar. Hover help, hit areas and rail spacing are preserved. Appearance defaults to following the system; Settings retains the optional light/dark override. All desktop pages share their outer spacing in `App/Layout`, with no leading or top inset. The clipped content surface has a 3-point trailing and bottom inset to expose the underlying window glass; these are outside the ScrollView, not content padding. Toolbar page titles use an 18-point semibold system font.
+
+Notifications use `App/Layout/DesktopTrailingPanel.swift`: opening the 310-point trailing panel smoothly narrows only the main content area, keeping the left rail and toolbar in place. The panel keeps its text at a fixed width while its visible area expands from the right. It has no background; the window’s shared `ultraThinMaterial` remains visible. A transparent `ScrollView` of text rows replaces the system inspector and List. The title, unread count and toolbar actions share one stable-width native toolbar item (`DesktopToolbarActions`). Its contents translate by the same 310 points over 0.32 seconds, keeping notification/settings buttons against the trailing edge when closed and moving them continuously left when opened, without asking AppKit to resize separate toolbar items. The read/close buttons use larger neutral native glass controls. Mark-all-read uses `checkmark.message`. Glass uses the system material without an added tint or white overlay. Notification and Settings share one compact capsule of regular system glass, with two native icon buttons and no divider, matching the supplied reference. Search uses capsule-shaped glass. Native action buttons use the glass button style; clickable data rows and icon navigation keep their existing content presentation. Search has a native glass background; the four severity filters use plain 14-point text without a glass background. Notification rows themselves remain transparent. Notice details use a native sheet and retain the original read/acknowledgement behavior. Settings use a compact 520 × 600 sheet with a grouped `Form`. Sheets use `NavigationStack`, native navigation titles and a standard confirmation toolbar action instead of a custom header.
+
+Cards and the scroll content clip share `DesktopTheme.surfaceShape`: 20-point continuous corners, including their matching borders. Cards retain the subtle two-layer shadow in `Shared/Theme/DesktopCardShadow.swift`, including the large asset card, metric cards and supporting analysis cards. Shadow strength adapts to light and dark appearance.
+
+The overview keeps assets and holdings first. A single row above the asset amount contains the metric selector followed by the time-range selector. Both use the shared `DesktopCapsulePicker`: intrinsic text widths, capsule shape, white selected segments with black text, and black inactive segments with white text. Time range is bound into the existing chart filtering/morph logic even when the chart's built-in control is hidden. The chart sits to the right of the asset/return summary. `DesktopAssetTrendRow` measures the summary at its natural width and assigns the remaining width to the chart on every layout pass, with a minimum chart allowance. The plot uses the space released by its old range selector and has default bottom padding. Allocation occupies the lower part of the same asset card. Personal/quant investment amounts appear to its right; available cash and holdings value appear below. Their former standalone cards are removed, as are the cumulative-return and daily-profit cards. The asset card spans the content width, retains the large-card minimum height and can grow to fit its integrated totals. The next-event card follows it. Sector flows and related news sit below holdings. Narrow windows stack supporting cards. `Shared/Layout/DesktopCardGrid.swift` defines small (164pt), medium (348pt) and large (532pt) heights with a 20pt gutter. News opens a native detail sheet. `Core/Models/MarketContextModels.swift` defines the models and `Core/Demo/DemoMarketContext.swift` holds fictional fixtures. Calendar/news relevance follows the selected scope's holdings; sector flows describe the whole demo market. No live feed was added.
+
+## Data and behavior
+
+- All / Personal / Quant scopes update balances, curves, allocation, positions, orders, events and notices together.
+- Cash is counted once. Shared symbols use combined quantities and weighted average costs.
+- Asset curves reuse the iOS animation: x positions stay fixed while y positions interpolate. Desktop charts add mouse hover and configurable height.
+- Returns are the original fixed-principal demo calculation. Future real accounts with deposits and withdrawals need cash-flow-adjusted returns; these sample returns should not be used for such accounts.
+- The original moomoo integration talks to a separate HTTP relay (`account`, `positions`, `quote`, `market_status`, `asset_snapshots`, orders and advisor routes). The relay/OpenD server is not part of the iOS source and is not included here.
+- Real connection controls, account credentials, live polling and persistent account storage have intentionally not been enabled in this preview. The relevant clients, models, calculations and caching code are preserved for the subsequent integration.
+
+## Validation
+
+Run Product → Test in Xcode. Unit tests cover scope reconciliation, weighted cost, chart endpoints, vertical morph correspondence, return calculations, moomoo decoding, offline behavior, filtering and intraday summaries. A UI test exercises scope switching, amount/return switching and icon navigation. The original app was previously checked for search, navigation and detail sheets; this does not certify subsequent UI changes.
+
+`DesktopSidebarTooltipTests` performs native pointer hovers, waits for visible system help tags, checks their text and saves screenshots for selected, inactive and newly selected items. Its live run is pending because the current command environment cannot resolve the Icon Composer document type. See [Icon Composer and sidebar verification](Docs/Validation/IconComposerAndSidebar.md) for the checked project configuration, reproduced build failure and precise validation status.
+
+The initial overview/chrome changes received syntax validation, independent component compilation and offscreen rendering checks. Subsequent system-color, 3pt inset, neutral-button and fixed-card-grid edits were made without running builds or tests, as requested by the user. Countdown expiry/event selection and news relevance were exercised with the actual models. Full-app build and native toolbar/glass integration remain blocked by Icon Composer export and the command environment's SwiftUI macro service restrictions; see `Docs/Validation/OverviewAndChrome.md`.
+
+## Shared package and terminal sections
+
+Everything below the screens lives in the local Swift package `../PortSightKit` (models, view models, OKX / moomoo / relay clients, cache, chart data and all demo fixtures). Both `PortsightMac` and the iOS `PortSight` project link it, so a change there compiles into both apps; each app keeps only its own SwiftUI pages. The package uses the same Swift 5 mode and MainActor default isolation as the app targets. Its tests run with `xcodebuild test -scheme PortSightKit -destination 'platform=macOS'` from the package folder.
+
+The icon rail follows the shared terminal sections (`TerminalSection`, plan §0.1): 总览 · 资产 · 交易 · 告警 · 服务器 · 云盘 · AI · 远程. Sections with sub-pages show them as segmented controls in the toolbar row, beside the 全部 / 个人 / 量化 scope picker (dimmed where a page shows no money); the content surface is unchanged. The original seven pages sit under 资产 (概览 / 美股 / 加密 · 持仓 / 订单 / 行情 / 分析 / 动态) and 交易 (线路 / 复盘 / 策略). New pages are laid out directly on the surface without cards. A `MenuBarExtra` shows server state, total assets and the latest alerts.
+
+Nothing connects yet: demo mode blocks shared-session requests, and `ServerStore` shows the sample `/host` document instead of contacting the relay. Real data is wired in once the Mac mini is set up.
